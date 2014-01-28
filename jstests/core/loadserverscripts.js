@@ -36,8 +36,7 @@ assert.eq(x, "myfunc", "Checking that myfunc() returns the correct value");
 // Insert value into collection from another process
 var coproc = startParallelShell(
         'db.getSisterDB("loadserverscripts").system.js.insert' +
-        '    ( {_id: "myfunc2", "value": function(){ return "myfunc2"; } } );' +
-        'db.getLastError();'
+        '    ( {_id: "myfunc2", "value": function(){ return "myfunc2"; } } );'
                 );
 // wait for results
 coproc();

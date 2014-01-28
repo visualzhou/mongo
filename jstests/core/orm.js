@@ -24,6 +24,5 @@ for( j = 0; j < 5; ++j ) {
       t.remove( {$or:clauses} );
     } catch ( e ) {
     }
-    db.getLastError();
 }
 p();

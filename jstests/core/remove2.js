@@ -20,12 +20,13 @@ function g() {
     t.save( { x:[3,4,5,6], z:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } );
     t.save( { x:[7,8,9], z:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" } );
 
-    t.remove( {x : {$gte:3}, $atomic:x++ } );
-    
-    assert( !db.getLastError() );
+    var res;
+    res = t.remove( {x : {$gte:3}, $atomic:x++ } );
+
+    assert( !res.hasWriteErrors() );
     // $atomic within $and is not allowed.
-    //t.remove( {x : {$gte:3}, $and:[{$atomic:true}] } );
-    //assert( db.getLastError() );
+    //res = t.remove( {x : {$gte:3}, $and:[{$atomic:true}] } );
+    //assert( res.hasWriteErrors() );
 
     assert( t.findOne({x:3}) == null );
     assert( t.findOne({x:8}) == null );

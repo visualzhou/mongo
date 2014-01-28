@@ -12,7 +12,7 @@ function pop(){
 }
 
 function del(){
-    t.remove( { tags : { $in : [ "a" , "c" ] } } );
+    return t.remove( { tags : { $in : [ "a" , "c" ] } } );
 }
 
 function test( n , idx ){
@@ -20,9 +20,8 @@ function test( n , idx ){
     assert.eq( N , t.count() , n + " A " + idx );
     if ( idx )
         t.ensureIndex( idx );
-    del();
-    var e = db.getLastError();
-    assert( e == null , "error deleting: " + e );
+    var res = del();
+    assert( !res.hasWriteErrors() , "error deleting: " + res.toString() );
     assert.eq( 0 , t.count() , n + " B " + idx );
 }
 

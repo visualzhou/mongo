@@ -5,6 +5,7 @@
 // If no array element position from a query is available to substitute for the positional operator
 // setinel ('$'), the update fails with an error.  SERVER-6669 SERVER-4713
 
+var res;
 t = db.jstests_updatel;
 t.drop();
 
@@ -12,8 +13,8 @@ t.drop();
 
 // The collection is empty, forcing an upsert.  In this case the query has no array position match
 // to substiture for the positional operator.  SERVER-4713
-t.update( {}, { $set:{ 'a.$.b':1 } }, true );
-assert( db.getLastError(), "An error is reported." );
+res = t.update( {}, { $set:{ 'a.$.b':1 } }, true );
+assert( res.hasWriteErrors(), "An error is reported." );
 assert.eq( 0, t.count(), "No upsert occurred." );
 
 
@@ -23,15 +24,15 @@ t.save( { _id:0 } );
 
 // Now, with an existing document, trigger an update rather than an upsert.  The query has no array
 // position match to substiture for the positional operator.  SERVER-6669
-t.update( {}, { $set:{ 'a.$.b':1 } } );
-assert( db.getLastError(), "An error is reported." );
+res = t.update( {}, { $set:{ 'a.$.b':1 } } );
+assert( res.hasWriteErrors(), "An error is reported." );
 assert.eq( [ { _id:0 } ], t.find().toArray(), "No update occurred." );
 
 
 
 // Now, try with an update by _id (without a query array match).
-t.update( { _id:0 }, { $set:{ 'a.$.b':1 } } );
-assert( db.getLastError(), "An error is reported." );
+res = t.update( { _id:0 }, { $set:{ 'a.$.b':1 } } );
+assert( res.hasWriteErrors(), "An error is reported." );
 assert.eq( [ { _id:0 } ], t.find().toArray(), "No update occurred." );
 
 
@@ -43,6 +44,6 @@ t.save( { _id:0, a:[ { b:{ c:1 } } ] } );
 // Now, attempt to apply an update with two nested positional operators.  There is a positional
 // query match for the first positional operator but not the second.  Note that dollar sign
 // substitution for multiple positional opertors is not implemented (SERVER-831).
-t.update( { 'a.b.c':1 }, { $set:{ 'a.$.b.$.c':2 } } );
-assert( db.getLastError(), "An error is reported" );
+res = t.update( { 'a.b.c':1 }, { $set:{ 'a.$.b.$.c':2 } } );
+assert( res.hasWriteErrors(), "An error is reported" );
 assert.eq( [ { _id:0, a:[ { b:{ c:1 } } ] } ], t.find().toArray(), "No update occurred." );

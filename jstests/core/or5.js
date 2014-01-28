@@ -78,7 +78,6 @@ assert.eq.automsg( "6", "t.find( {$or:[{a:2},{b:3},{c:4}]} ).batchSize( 2 ).itco
 // c = t.find( {$or:[{a:2},{b:3},{c:4}]} ).batchSize( 2 );
 // c.next(); // Trigger initial query.
 // t.remove( {b:3} );
-// db.getLastError();
 // assert.eq.automsg( "3", c.itcount() ); // The remaining [{a:2},{c:4},{c:4}] comprise 3 results.
 
 // reset();
@@ -87,7 +86,6 @@ assert.eq.automsg( "6", "t.find( {$or:[{a:2},{b:3},{c:4}]} ).batchSize( 2 ).itco
 // c.next();
 // c.next();
 // t.remove( {b:3} );
-// db.getLastError();
 // assert.eq.automsg( "2", c.itcount() );
 
 // reset();
@@ -97,7 +95,6 @@ assert.eq.automsg( "6", "t.find( {$or:[{a:2},{b:3},{c:4}]} ).batchSize( 2 ).itco
 // c.next();
 // c.next();
 // t.remove( {b:3} );
-// db.getLastError();
 // assert.eq.automsg( "3", c.itcount() );
 
 // reset();
@@ -108,7 +105,6 @@ assert.eq.automsg( "6", "t.find( {$or:[{a:2},{b:3},{c:4}]} ).batchSize( 2 ).itco
 // c.next();
 // c.next();
 // t.remove( {b:3} );
-// db.getLastError();
 // assert.eq.automsg( "2", c.itcount() );
 
 t.drop();

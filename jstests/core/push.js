@@ -1,5 +1,6 @@
+var res;
 
-t = db.push
+t = db.push;
 t.drop();
 
 t.save( { _id : 2 , a : [ 1 ] } );
@@ -25,30 +26,30 @@ assert.eq( "3,4,5" , t.findOne().a.toString() , "E2" );
 t.update( { _id : 2 } , { $pop : { a : -1 } } );
 assert.eq( "4,5" , t.findOne().a.toString() , "E3" );
 
-t.update( { _id : 2 } , { $pop : { a : -1 } } );
-assert.isnull( db.getLastError() , "E4a" )
+res = t.update( { _id : 2 } , { $pop : { a : -1 } } );
+assert( !res.hasWriteErrors() , "E4a" )
 assert.eq( "5" , t.findOne().a.toString() , "E4" );
 
 
-t.update( { _id : 2 } , { $pop : { a : -1 } } );
-assert.isnull( db.getLastError() , "E5a") 
+res = t.update( { _id : 2 } , { $pop : { a : -1 } } );
+assert( !res.hasWriteErrors() , "E5a")
 assert.eq( "" , t.findOne().a.toString() , "E5" );
 
-t.update( { _id : 2 } , { $pop : { a : -1 } } );
-assert.isnull( db.getLastError() , "E6a" )
+res = t.update( { _id : 2 } , { $pop : { a : -1 } } );
+assert( !res.hasWriteErrors() , "E6a" )
 assert.eq( "" , t.findOne().a.toString() , "E6" );
 
-t.update( { _id : 2 } , { $pop : { a : -1 } } );
-assert.isnull( db.getLastError() , "E7a" )
+res = t.update( { _id : 2 } , { $pop : { a : -1 } } );
+assert( !res.hasWriteErrors() , "E7a" )
 assert.eq( "" , t.findOne().a.toString() , "E7" );
 
-t.update( { _id : 2 } , { $pop : { a : 1 } } );
-assert.isnull( db.getLastError() , "E8a" )
+res = t.update( { _id : 2 } , { $pop : { a : 1 } } );
+assert( !res.hasWriteErrors() , "E8a" )
 assert.eq( "" , t.findOne().a.toString() , "E8" );
 
-t.update( { _id : 2 } , { $pop : { b : -1 } } );
-assert.isnull( db.getLastError() , "E4a" )
+res = t.update( { _id : 2 } , { $pop : { b : -1 } } );
+assert( !res.hasWriteErrors() , "E4a" )
 
-t.update( { _id : 2 } , { $pop : { b : 1 } } );
-assert.isnull( db.getLastError() , "E4a" )
+res = t.update( { _id : 2 } , { $pop : { b : 1 } } );
+assert( !res.hasWriteErrors() , "E4a" )
 

@@ -52,8 +52,7 @@ function testOne( map, reduce, finalize, scope, childLoop, wait ) {
     // Ensure we have 2 documents for the reduce to run
     t.save( {a:1} );
     t.save( {a:1} );
-    db.getLastError();
-            
+
     spec = {
         mapreduce:"jstests_mr_killop",
         out:"jstests_mr_killop_out",

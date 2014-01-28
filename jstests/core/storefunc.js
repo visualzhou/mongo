@@ -1,12 +1,13 @@
 // Use a private sister database to avoid conflicts with other tests that use system.js
 var testdb = db.getSisterDB("storefunc");
+var res;
 
 s = testdb.system.js;
 s.remove({});
 assert.eq( 0 , s.count() , "setup - A" );
 
-s.save( { _id : "x" , value : "3" } );
-assert.isnull( testdb.getLastError() , "setup - B" );
+res = s.save( { _id : "x" , value : "3" } );
+assert( !res.hasWriteErrors() , "setup - B" );
 assert.eq( 1 , s.count() , "setup - C" );
 
 s.remove( { _id : "x" } );

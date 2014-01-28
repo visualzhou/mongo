@@ -11,8 +11,7 @@ for (i = 1; i < 10; i++) {
 }
 
 t.createIndex({a:1}, {name: "aaa"});
-t.createIndex({a:1}, {name: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
+var result = t.createIndex({a:1}, {name: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" +
                             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"});
-var result = db.getLastErrorObj();
-assert( result.code >= 0 );
-assert( result.err.indexOf( "too long" ) >= 0 );
+assert( !result.ok );
+assert( result.errmsg.indexOf( "too long" ) >= 0 );

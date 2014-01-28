@@ -18,7 +18,6 @@ for( i = 0; i < 10000; ++i ) {
               reduceSleep:reduceSleep,
               finalizeSleep:finalizeSleep } );
 }
-db.getLastError();
 
 // Schedule a collection drop two seconds in the future.
 s = startParallelShell( "sleep( 2000 ); db.jstests_mr_drop.drop();" );
@@ -35,4 +34,4 @@ t.mapReduce( function() { sleep( this.mapSleep ); emit( this.key, this ); },
 s();
 
 // Ensure the server is still alive.  Under SERVER-6757 the server can crash.
-assert( !db.getLastError() );
+assert( db.serverStatus().ok );

@@ -10,8 +10,8 @@ gotError = null;
 
 for ( x=0; x<100; x++ ){
     print (x + " pushes");
-    t.update( {} , { $push : { a : s } } );
-    gotError = db.getLastError();
+    var res = t.update( {} , { $push : { a : s } } );
+    gotError = res.hasWriteErrors();
     if ( gotError )
         break;
 }

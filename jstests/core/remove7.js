@@ -26,10 +26,9 @@ for ( i=0; i<200; i++ ){
         t.save( { tags : getTags( 100 ) } );
     var q = { tags : { $in : getTags( 10 ) } };
     var before = t.find( q ).count();
-    t.remove( q );
-    var o = db.getLastErrorObj();
+    var res = t.remove( q );
     var after = t.find( q ).count();
     assert.eq( 0 , after , "not zero after!" );
-    assert.isnull( o.err , "error: " + tojson( o ) );
+    assert( !res.hasWriteErrors() , "error: " + res.toString() );
 }
-    
+

@@ -96,7 +96,6 @@ var case4 = function() {
     for( i=1; i<numDocs; i++ ){
         f.save( { x: i, y: filler } );
     }
-    db.getLastError();
     res = db.runCommand( { splitVector: "test.jstests_splitvector" , keyPattern: {x:1} , maxChunkSize: 1 } );
 
     // splitVector aims at getting half-full chunks after split
@@ -123,7 +122,6 @@ var case5 = function() {
     for( i=1; i<numDocs; i++ ){
         f.save( { x: i, y: filler } );
     }
-    db.getLastError();
     res = db.runCommand( { splitVector: "test.jstests_splitvector" , keyPattern: {x:1} , maxChunkSize: 1 , maxSplitPoints: 1} );
 
     assert.eq( true , res.ok , "5a" );
@@ -146,7 +144,6 @@ var case6 = function() {
     for( i=1; i<numDocs; i++ ){
         f.save( { x: i, y: filler } );
     }
-    db.getLastError();
     res = db.runCommand( { splitVector: "test.jstests_splitvector" , keyPattern: {x:1} , maxChunkSize: 1 , maxChunkObjects: 500} );
 
     assert.eq( true , res.ok , "6a" );
@@ -174,7 +171,6 @@ var case7 = function() {
     for( i=1; i<10; i++ ){
         f.save( { x: 2, y: filler } );
     }
-    db.getLastError();
     res = db.runCommand( { splitVector: "test.jstests_splitvector" , keyPattern: {x:1} , maxChunkSize: 1 } );
 
     assert.eq( true , res.ok , "7a" );
@@ -206,7 +202,6 @@ var case8 = function() {
         f.save( { x: 3, y: filler } );
     }
 
-    db.getLastError();
     res = db.runCommand( { splitVector: "test.jstests_splitvector" , keyPattern: {x:1} , maxChunkSize: 1 } );
 
     assert.eq( true , res.ok , "8a" );
@@ -230,7 +225,6 @@ var case9 = function() {
     f.save( { x: 1 } );
     f.save( { x: 2 } );
     f.save( { x: 3 } );
-    db.getLastError();
 
     assert.eq( 3 , f.count() );
     print( f.getFullName() )

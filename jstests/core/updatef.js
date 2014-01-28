@@ -12,7 +12,6 @@ for( i = 0; i < 1000; ++i ) {
 }
 t.save( {a:0,b:[]} );
 
-db.getLastError();
 // Repeatedly rename jstests_updatef to jstests_updatef_ and back.  This will
 // invalidate the jstests_updatef_actual NamespaceDetailsTransient object.
 s = startParallelShell( "for( i=0; i < 100; ++i ) { db.jstests_updatef.renameCollection( 'jstests_updatef_' ); db.jstests_updatef_.renameCollection( 'jstests_updatef' ); }" );

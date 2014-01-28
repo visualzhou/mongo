@@ -15,7 +15,6 @@ t = db.jstests_killop
 t.drop();
 
 t.save( {} );
-db.getLastError();
 
 /**
  * This function filters for the operations that we're looking for, based on their state and

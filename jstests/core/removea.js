@@ -18,6 +18,6 @@ for( v = 0; v < 2; ++v ) { // Try each index version.
     }
     // Remove many of the documents; $atomic prevents use of a ClientCursor, which would invoke a
     // different bucket deallocation procedure than the one to be tested (see SERVER-4575).
-    t.remove( { a:{ $in:toDrop }, $atomic:true } );
-    assert( !db.getLastError() );
+    var res = t.remove( { a:{ $in:toDrop }, $atomic:true } );
+    assert( !res.hasWriteErrors() );
 }

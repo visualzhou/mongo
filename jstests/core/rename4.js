@@ -2,26 +2,18 @@ t = db.jstests_rename4;
 t.drop();
 
 function bad( f ) {
-    //Ensure no error to start with
-    var lstError = db.getLastError();
-    if (lstError)
-        assert( false, "Unexpected error : " + lstError );
-
     var docsBeforeUpdate = t.find().toArray();
-    eval( f );
+    var res = eval( f );
 
     //Ensure error
-    var lstError = db.getLastErrorObj();
-    if (!lstError.err) {
-        print("Error:" + tojson(lstError));
+    if (!res.hasWriteErrors()) {
+        print("Error:" + res.toString());
         print("Existing docs (before)")
         printjson(docsBeforeUpdate);
         print("Existing docs (after)")
         printjson(t.find().toArray());
         assert( false, "Expected error but didn't get one for: " + f );
     }
-
-    db.resetError();
 }
 
 bad( "t.update( {}, {$rename:{'a':'a'}} )" );
@@ -68,8 +60,8 @@ bad( "t.update( {}, {$rename:{'a':'f.g'}} )" );
 function good( start, mod, expected ) {
     t.remove();
     t.save( start );
-    t.update( {}, mod );
-    assert( !db.getLastError() );
+    var res = t.update( {}, mod );
+    assert( !res.hasWriteErrors() );
     var got = t.findOne();
     delete got._id;
     assert.docEq( expected, got );
@@ -132,8 +124,8 @@ t.ensureIndex( {a:1} );
 function l( start, mod, query, expected ) {
     t.remove();
     t.save( start );
-    t.update( {}, mod );
-    assert( !db.getLastError() );
+    var res = t.update( {}, mod );
+    assert( !res.hasWriteErrors() );
     var got = t.find( query ).hint( {a:1} ).next();
     delete got._id;
     assert.docEq( expected, got );

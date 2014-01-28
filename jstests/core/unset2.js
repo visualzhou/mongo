@@ -1,3 +1,5 @@
+var res;
+
 t = db.unset2;
 t.drop();
 
@@ -18,6 +20,6 @@ assert.eq( ["a","b",null,3,4,5], t.findOne().a );
 
 t.drop();
 t.save( {a:["a","b","c","d","e"]} );
-t.update( {}, {$unset:{"a.2":1},$set:{"a.2":4}} );
-assert( db.getLastError() );
+res = t.update( {}, {$unset:{"a.2":1},$set:{"a.2":4}} );
+assert( res.hasWriteErrors() );
 assert.eq( ["a","b","c","d","e"], t.findOne().a );

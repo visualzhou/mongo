@@ -1,6 +1,7 @@
 // test $set with array indicies
 
 t = db.jstests_set7;
+var res;
 
 t.drop();
 
@@ -35,8 +36,8 @@ assert.eq( {"0":4}, t.findOne().a );
 
 t.drop();
 t.save( {a:[]} );
-t.update( {}, {$set:{"a.f":1}} );
-assert( db.getLastError() );
+res = t.update( {}, {$set:{"a.f":1}} );
+assert( res.hasWriteErrors() );
 assert.eq( [], t.findOne().a );
 
 // Test requiring proper ordering of multiple mods.
@@ -53,15 +54,15 @@ assert.eq( [0,1,2,3,4,5,6,7,8,9,10,11], t.findOne().a );
 // SERVER-3750
 t.drop();
 t.save( {a:[]} );
-t.update( {}, {$set:{"a.1500000":1}} ); // current limit
-assert( db.getLastError() == null );
+res = t.update( {}, {$set:{"a.1500000":1}} ); // current limit
+assert( !res.hasWriteErrors() );
 
 t.drop();
 t.save( {a:[]} );
-t.update( {}, {$set:{"a.1500001":1}} ); // 1 over limit
-assert.neq( db.getLastErrorObj(), null );
+res = t.update( {}, {$set:{"a.1500001":1}} ); // 1 over limit
+assert( res.hasWriteErrors() );
 
 t.drop();
 t.save( {a:[]} );
-t.update( {}, {$set:{"a.1000000000":1}} ); // way over limit
-assert.neq( db.getLastErrorObj(), null );
+res = t.update( {}, {$set:{"a.1000000000":1}} ); // way over limit
+assert( res.hasWriteErrors() );

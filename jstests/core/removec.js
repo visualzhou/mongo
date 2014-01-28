@@ -17,7 +17,6 @@ function runStartingWith( i ) {
 for( i = 0; i < 1100; i += 11 ) {
     t.save( { a:runStartingWith( i ) } );
 }
-db.getLastError();
 
 // Remove and then reinsert random documents in the background.
 s = startParallelShell(
@@ -32,7 +31,6 @@ s = startParallelShell(
 // Find operations are error free.
 for( i = 0; i < 200; ++i ) {
     t.find( { a:{ $gte:0 } } ).hint( { a:1 } ).itcount();
-    assert( !db.getLastError() );
 }
 
 s();
