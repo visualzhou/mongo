@@ -29,6 +29,9 @@ using std::make_pair;
 #include "s2cell.h"
 #include "s2edgeindex.h"
 
+#include "mongo/util/mongoutils/str.h"
+using mongoutils::str::stream;
+
 static const unsigned char kCurrentEncodingVersionNumber = 1;
 
 S2Point const* S2LoopIndex::edge_from(int index) const {
@@ -90,16 +93,18 @@ void S2Loop::Init(vector<S2Point> const& vertices) {
   InitBound();
 }
 
-bool S2Loop::IsValid() const {
+bool S2Loop::IsValid(string* err) const {
   // Loops must have at least 3 vertices.
   if (num_vertices() < 3) {
     VLOG(2) << "Degenerate loop";
+    if (err) *err = "Degenerate loop";
     return false;
   }
   // All vertices must be unit length.
   for (int i = 0; i < num_vertices(); ++i) {
     if (!S2::IsUnitLength(vertex(i))) {
       VLOG(2) << "Vertex " << i << " is not unit length";
+      if (err) *err = stream() << "Vertex " << i << " is not unit length";
       return false;
     }
   }
@@ -108,6 +113,7 @@ bool S2Loop::IsValid() const {
   for (int i = 0; i < num_vertices(); ++i) {
     if (!vmap.insert(make_pair(vertex(i), i)).second) {
       VLOG(2) << "Duplicate vertices: " << vmap[vertex(i)] << " and " << i;
+      if (err) *err = stream() << "Duplicate vertices: " << vmap[vertex(i)] << " and " << i;
       return false;
     }
   }
@@ -136,6 +142,15 @@ bool S2Loop::IsValid() const {
                   << S2LatLng(vertex(i)) << "-" << S2LatLng(vertex(i+1))
                   << " and "
                   << S2LatLng(vertex(ai)) << "-" << S2LatLng(vertex(ai+1));
+          if (NULL != err) {
+            std::stringstream ss;
+            ss << "Edges " << i << " and " << ai << " cross. "
+               << "Edge locations in degrees: "
+               << S2LatLng(vertex(i)) << "-" << S2LatLng(vertex(i + 1))
+               << " and "
+               << S2LatLng(vertex(ai)) << "-" << S2LatLng(vertex(ai + 1));
+            *err = ss.str();
+          }
           break;
         }
       }
