@@ -44,6 +44,13 @@ namespace mongo {
     class GeoParser {
     public:
 
+        // Parse the BSON object after $box, $center, etc.
+        static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
+        static Status newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out);
+        static Status newParseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out);
+        static Status newParseCenterSphere(const BSONObj& obj, CapWithCRS *out);
+        static Status newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out);
+
         static bool isPoint(const BSONObj &obj);
         // Legacy points can contain extra data as extra fields - these are valid to index
         static bool isIndexablePoint(const BSONObj& obj);

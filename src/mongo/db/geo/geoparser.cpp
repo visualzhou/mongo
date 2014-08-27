@@ -53,6 +53,9 @@ namespace mongo {
     static const string GEOJSON_COORDINATES = "coordinates";
     static const string GEOJSON_GEOMETRIES = "geometries";
 
+    // XXX Return better errors for all bad values
+    static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
+
     static bool isGeoJSONPoint(const BSONObj& obj) {
         BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
         if (type.eoo() || (String != type.type())) { return false; }
@@ -253,6 +256,19 @@ namespace mongo {
         return true;
     }
 
+    static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
+        if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
+        BSONObjIterator it(elem.Obj());
+        BSONElement x = it.next();
+        if (!x.isNumber()) { return BAD_VALUE_STATUS; }
+        BSONElement y = it.next();
+        if (!y.isNumber()) { return BAD_VALUE_STATUS; }
+        if (!allowAddlFields && it.more()) { return BAD_VALUE_STATUS; }
+        out->x = x.number();
+        out->y = y.number();
+        return Status::OK();
+    }
+
     static bool parseLegacyPoint(const BSONObj &obj, Point *out) {
         BSONObjIterator it(obj);
         BSONElement x = it.next();
@@ -369,12 +385,7 @@ namespace mongo {
 
     bool GeoParser::parsePoint(const BSONObj &obj, PointWithCRS *out) {
         if (isLegacyPoint(obj, true)) {
-            BSONObjIterator it(obj);
-            BSONElement x = it.next();
-            BSONElement y = it.next();
-            out->oldPoint.x = x.Number();
-            out->oldPoint.y = y.Number();
-            out->crs = FLAT;
+            parseLegacyPoint(obj, &out->oldPoint);
         } else if (isGeoJSONPoint(obj)) {
             const vector<BSONElement>& coords = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
             out->oldPoint.x = coords[0].Number();
@@ -414,6 +425,59 @@ namespace mongo {
         return true;
     }
 
+    Status GeoParser::newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out) {
+        Point ptA, ptB;
+        Status status = Status::OK();
+
+        BSONObjIterator coordIt(obj);
+        status = newParseLegacyPoint(coordIt.next(), &ptA);
+        if (!status.isOK()) { return status; }
+        status = newParseLegacyPoint(coordIt.next(), &ptB);
+        if (!status.isOK()) { return status; }
+        // XXX: VERIFY AREA >= 0
+
+        out->box.init(ptA, ptB);
+        out->crs = FLAT;
+        return status;
+    }
+
+    Status GeoParser::newParseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out) {
+        BSONObjIterator coordIt(obj);
+        vector<Point> points;
+        while (coordIt.more()) {
+            Point p;
+            // A coordinate
+            Status status = newParseLegacyPoint(coordIt.next(), &p);
+            if (!status.isOK()) return status;
+            points.push_back(p);
+        }
+        if (points.size() < 3) return BAD_VALUE_STATUS;
+        out->oldPolygon.init(points);
+        out->crs = FLAT;
+        return Status::OK();
+    }
+
+    Status GeoParser::newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
+        const vector<BSONElement>& coordinates = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
+
+        if (!parseGeoJSONCRS(obj, &out->crs))
+            return BAD_VALUE_STATUS;
+
+        if (out->crs == SPHERE) {
+            out->s2Polygon.reset(new S2Polygon());
+            if (!parseGeoJSONPolygonCoordinates(coordinates, obj, out->s2Polygon.get())) {
+                return BAD_VALUE_STATUS;
+            }
+        }
+        else if (out->crs == STRICT_SPHERE) {
+            out->bigPolygon.reset(new BigSimplePolygon());
+            if (!parseBigSimplePolygonCoordinates(coordinates, obj, out->bigPolygon.get())) {
+                return BAD_VALUE_STATUS;
+            }
+        }
+        return Status::OK();
+    }
+
     bool GeoParser::isBox(const BSONObj &obj) {
         BSONObjIterator typeIt(obj);
         BSONElement type = typeIt.next();
@@ -434,50 +498,17 @@ namespace mongo {
     bool GeoParser::parseBox(const BSONObj &obj, BoxWithCRS *out) {
         BSONObjIterator typeIt(obj);
         BSONElement type = typeIt.next();
-        BSONObjIterator coordIt(type.embeddedObject());
-        BSONElement minE = coordIt.next();
-        BSONElement maxE = coordIt.next();
-        Point ptA, ptB;
-        if (!parseLegacyPoint(minE.Obj(), &ptA) ||
-            !parseLegacyPoint(maxE.Obj(), &ptB)) { return false; }
-        out->box.init(ptA, ptB);
-        out->crs = FLAT;
-        return true;
+        return GeoParser::newParseLegacyBox(type.Obj(), out).isOK();
     }
 
     bool GeoParser::parsePolygon(const BSONObj &obj, PolygonWithCRS *out) {
         if (isGeoJSONPolygon(obj)) {
-            const vector<BSONElement>& coordinates = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
-
-            if (!parseGeoJSONCRS(obj, &out->crs))
-                return false;
-
-            if (out->crs == SPHERE) {
-                out->s2Polygon.reset(new S2Polygon());
-                if (!parseGeoJSONPolygonCoordinates(coordinates, obj, out->s2Polygon.get())) {
-                    return false;
-                }
-            }
-            else if (out->crs == STRICT_SPHERE) {
-                out->bigPolygon.reset(new BigSimplePolygon());
-                if (!parseBigSimplePolygonCoordinates(coordinates, obj, out->bigPolygon.get())) {
-                    return false;
-                }
-            }
+            return newParseGeoJSONPolygon(obj, out).isOK();
         } else {
             BSONObjIterator typeIt(obj);
             BSONElement type = typeIt.next();
-            BSONObjIterator coordIt(type.embeddedObject());
-            vector<Point> points;
-            while (coordIt.more()) {
-                Point p;
-                if (!parseLegacyPoint(coordIt.next().Obj(), &p)) { return false; }
-                points.push_back(p);
-            }
-            out->oldPolygon.init(points);
-            out->crs = FLAT;
+            return newParseLegacyPolygon(type.Obj(), out).isOK();
         }
-        return true;
     }
 
     bool GeoParser::isMultiPoint(const BSONObj &obj) {
@@ -667,40 +698,63 @@ namespace mongo {
         return isLegacyCenter(obj) || isLegacyCenterSphere(obj);
     }
 
+    Status GeoParser::newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out) {
+        BSONObjIterator objIt(obj);
+
+        // Center
+        BSONElement center = objIt.next();
+        Status status = newParseLegacyPoint(center, &out->circle.center);
+        if (!status.isOK()) return status;
+
+        // Redius
+        BSONElement radius = objIt.next();
+        if (!radius.isNumber() || radius.number() < 0) { return BAD_VALUE_STATUS; }
+
+        // No more
+        if (objIt.more()) return BAD_VALUE_STATUS;
+
+        out->circle.radius = radius.number();
+        out->crs = FLAT;
+        return Status::OK();
+    }
+
+    Status GeoParser::newParseCenterSphere(const BSONObj& obj, CapWithCRS *out) {
+        BSONObjIterator objIt(obj);
+
+        // Center
+        BSONElement center = objIt.next();
+        Point p;
+        Status status = newParseLegacyPoint(center, &p);
+        if (!status.isOK()) return status;
+        if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
+        S2Point centerPoint = coordToPoint(p.x, p.y);
+
+        // Radius
+        BSONElement radiusElt = objIt.next();
+        if (!radiusElt.isNumber() || radiusElt.number() < 0) { return BAD_VALUE_STATUS; }
+        double radius = radiusElt.number();
+
+        // No more elements
+        if (objIt.more()) return BAD_VALUE_STATUS;
+
+        out->cap = S2Cap::FromAxisAngle(centerPoint, S1Angle::Radians(radius));
+        out->circle.radius = radius;
+        out->circle.center = p;
+        out->crs = SPHERE;
+        return Status::OK();
+    }
+
     bool GeoParser::parseCap(const BSONObj& obj, CapWithCRS *out) {
         if (isLegacyCenter(obj)) {
             BSONObjIterator typeIt(obj);
             BSONElement type = typeIt.next();
-            BSONObjIterator objIt(type.embeddedObject());
-            BSONElement center = objIt.next();
-            if (!parseLegacyPoint(center.Obj(), &out->circle.center)) { return false; }
-            BSONElement radius = objIt.next();
-            out->circle.radius = radius.number();
-            if (out->circle.radius < 0)
-                return false;
-            out->crs = FLAT;
+            return newParseLegacyCenter(type.Obj(), out).isOK();
         } else {
             verify(isLegacyCenterSphere(obj));
             BSONObjIterator typeIt(obj);
             BSONElement type = typeIt.next();
-            BSONObjIterator objIt(type.embeddedObject());
-            BSONObj centerObj = objIt.next().Obj();
-
-            S2Point centerPoint;
-            BSONObjIterator it(centerObj);
-            BSONElement x = it.next();
-            BSONElement y = it.next();
-            centerPoint = coordToPoint(x.Number(), y.Number());
-            BSONElement radiusElt = objIt.next();
-            double radius = radiusElt.number();
-            if (radius < 0)
-                return false;
-            out->cap = S2Cap::FromAxisAngle(centerPoint, S1Angle::Radians(radius));
-            out->circle.radius = radius;
-            out->circle.center = Point(x.Number(), y.Number());
-            out->crs = SPHERE;
+            return newParseCenterSphere(type.Obj(), out).isOK();
         }
-        return true;
     }
 
     bool GeoParser::parseGeometryCollection(const BSONObj &obj, GeometryCollection *out) {
