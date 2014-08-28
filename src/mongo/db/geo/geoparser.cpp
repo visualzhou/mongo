@@ -90,6 +90,19 @@ namespace mongo {
         return true;
     }
 
+    static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
+        if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
+        BSONObjIterator it(elem.Obj());
+        BSONElement x = it.next();
+        if (!x.isNumber()) { return BAD_VALUE_STATUS; }
+        BSONElement y = it.next();
+        if (!y.isNumber()) { return BAD_VALUE_STATUS; }
+        if (!allowAddlFields && it.more()) { return BAD_VALUE_STATUS; }
+        out->x = x.number();
+        out->y = y.number();
+        return Status::OK();
+    }
+
     static S2Point coordToPoint(double lng, double lat) {
         // We don't rely on drem to clean up non-sane points.  We just don't let them become
         // spherical.
@@ -104,6 +117,31 @@ namespace mongo {
         }
         return ll.ToPoint();
     }
+
+    static Status newParseGeoJSONCoodinate(const BSONElement& elem, S2Point* out) {
+        if (Array != elem.type()) { return BAD_VALUE_STATUS; }
+        Point p;
+        // Check the object has and only has 2 numbers.
+        Status status = newParseLegacyPoint(elem, &p);
+        if (!status.isOK()) return status;
+        if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
+        *out = coordToPoint(p.x, p.y);
+        return Status::OK();
+    }
+
+    static Status newParseArrayOfCoodinates(const BSONElement& elem, vector<S2Point>* out) {
+        if (Array != elem.type()) { return BAD_VALUE_STATUS; }
+        BSONObjIterator it(elem.Obj());
+        // Iterate all coordinates in array
+        while (it.more()) {
+            S2Point p;
+            Status status = newParseGeoJSONCoodinate(it.next(), &p);
+            if (!status.isOK()) return status;
+            out->push_back(p);
+        }
+        return Status::OK();
+    }
+
 
     static void eraseDuplicatePoints(vector<S2Point>* vertices) {
         for (size_t i = 1; i < vertices->size(); ++i) {
@@ -134,6 +172,11 @@ namespace mongo {
         return true;
     }
 
+    static Status newIsLoopClosed(const vector<S2Point>& loop) {
+        if (loop.empty() || loop[0] != loop[loop.size() - 1]) return BAD_VALUE_STATUS;
+        return Status::OK();
+    }
+
     static bool parsePoints(const vector<BSONElement>& coordElt, vector<S2Point>* out) {
         for (size_t i = 0; i < coordElt.size(); ++i) {
             const vector<BSONElement>& pointElt = coordElt[i].Array();
@@ -156,16 +199,25 @@ namespace mongo {
         return S2Polyline::IsValid(vertices);
     }
 
-    static bool parseGeoJSONPolygonCoordinates(const vector<BSONElement>& coordinates,
-                                               const BSONObj &sourceObject,
-                                               S2Polygon *out) {
+    static Status parseGeoJSONPolygonCoordinates(const BSONElement& elem, S2Polygon *out) {
+        if (Array != elem.type()) { return BAD_VALUE_STATUS; }
 
         OwnedPointerVector<S2Loop> loops;
-        for (size_t i = 0; i < coordinates.size(); i++) {
-            const vector<BSONElement>& loopCoordinates = coordinates[i].Array();
-            vector<S2Point> points;
+        Status status = Status::OK();
 
-            if (!parsePoints(loopCoordinates, &points)) { return false; }
+        BSONObjIterator it(elem.Obj());
+        // Iterate all loops of the polygon.
+        while (it.more()) {
+            // Parse the array of vertices of a loop.
+            BSONElement coordinateElt = it.next();
+            vector<S2Point> points;
+            status = newParseArrayOfCoodinates(coordinateElt, &points);
+            if (!status.isOK()) return status;
+
+            // Check if the loop is closed.
+            status = newIsLoopClosed(points);
+            if (!status.isOK()) return status;
+
             eraseDuplicatePoints(&points);
             // Drop the duplicated last point.
             points.resize(points.size() - 1);
@@ -179,7 +231,7 @@ namespace mongo {
             // 3. Loops are not allowed to have any duplicate vertices.
             // 4. Non-adjacent edges are not allowed to intersect.
             if (!loop->IsValid()) {
-                return false;
+                return BAD_VALUE_STATUS;
             }
 
             // If the loop is more than one hemisphere, invert it.
@@ -187,14 +239,14 @@ namespace mongo {
 
             // Check the first loop must be the exterior ring and any others must be
             // interior rings or holes.
-            if (i > 0 && !loops[0]->Contains(loop)) return false;
+            if (loops.size() > 1 && !loops[0]->Contains(loop)) return BAD_VALUE_STATUS;
         }
 
         // Check if the given loops form a valid polygon.
         // 1. If a loop contains an edge AB, then no other loop may contain AB or BA.
         // 2. No loop covers more than half of the sphere.
         // 3. No two loops cross.
-        if (!S2Polygon::IsValid(loops.vector())) return false;
+        if (!S2Polygon::IsValid(loops.vector())) return BAD_VALUE_STATUS;
 
         // Given all loops are valid / normalized and S2Polygon::IsValid() above returns true.
         // The polygon must be valid. See S2Polygon member function IsValid().
@@ -204,39 +256,42 @@ namespace mongo {
 
         // Check if every loop of this polygon shares at most one vertex with
         // its parent loop.
-        if (!out->IsNormalized()) return false;
+        if (!out->IsNormalized()) return BAD_VALUE_STATUS;
 
         // S2Polygon contains more than one ring, which is allowed by S2, but not by GeoJSON.
         //
         // Loops are indexed according to a preorder traversal of the nesting hierarchy.
         // GetLastDescendant() returns the index of the last loop that is contained within
         // a given loop. We guarantee that the first loop is the exterior ring.
-        if (out->GetLastDescendant(0) < out->num_loops() - 1) return false;
+        if (out->GetLastDescendant(0) < out->num_loops() - 1) return BAD_VALUE_STATUS;
 
         // In GeoJSON, only one nesting is allowed.
         // The depth of a loop is set by polygon according to the nesting hierarchy of polygon,
         // so the exterior ring's depth is 0, a hole in it is 1, etc.
         for (int i = 0; i < out->num_loops(); i++) {
             if (out->loop(i)->depth() > 1) {
-                return false;
+                return BAD_VALUE_STATUS;
             }
         }
-        return true;
+        return Status::OK();
     }
 
-    static bool parseBigSimplePolygonCoordinates(const vector<BSONElement>& coordinates,
-                                                 const BSONObj &sourceObject,
-                                                 BigSimplePolygon *out) {
+    static Status parseBigSimplePolygonCoordinates(const BSONElement& elem,
+                                                   BigSimplePolygon *out) {
+        if (Array != elem.type()) return BAD_VALUE_STATUS;
 
+        const vector<BSONElement>& coordinates = elem.Array();
         // Only one loop is allowed in a BigSimplePolygon
         if (coordinates.size() != 1)
-            return false;
-
-        const vector<BSONElement>& exteriorRing = coordinates[0].Array();
+            return BAD_VALUE_STATUS;
 
         vector<S2Point> exteriorVertices;
-        if (!parsePoints(exteriorRing, &exteriorVertices))
-            return false;
+        Status status = Status::OK();
+        status = newParseArrayOfCoodinates(coordinates.front(), &exteriorVertices);
+        if (!status.isOK()) return status;
+
+        status = newIsLoopClosed(exteriorVertices);
+        if (!status.isOK()) return status;
 
         eraseDuplicatePoints(&exteriorVertices);
 
@@ -246,26 +301,13 @@ namespace mongo {
 
         // S2 Polygon loops must have 3 vertices
         if (exteriorVertices.size() < 3)
-            return false;
+            return BAD_VALUE_STATUS;
 
         auto_ptr<S2Loop> loop(new S2Loop(exteriorVertices));
         if (!loop->IsValid())
-            return false;
+            return BAD_VALUE_STATUS;
 
         out->Init(loop.release());
-        return true;
-    }
-
-    static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
-        if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
-        BSONObjIterator it(elem.Obj());
-        BSONElement x = it.next();
-        if (!x.isNumber()) { return BAD_VALUE_STATUS; }
-        BSONElement y = it.next();
-        if (!y.isNumber()) { return BAD_VALUE_STATUS; }
-        if (!allowAddlFields && it.more()) { return BAD_VALUE_STATUS; }
-        out->x = x.number();
-        out->y = y.number();
         return Status::OK();
     }
 
@@ -458,24 +500,22 @@ namespace mongo {
     }
 
     Status GeoParser::newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
-        const vector<BSONElement>& coordinates = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
+        const BSONElement coordinates = obj.getFieldDotted(GEOJSON_COORDINATES);
 
+        // XXX: check is CRS ok.
         if (!parseGeoJSONCRS(obj, &out->crs))
             return BAD_VALUE_STATUS;
 
+        Status status = Status::OK();
         if (out->crs == SPHERE) {
             out->s2Polygon.reset(new S2Polygon());
-            if (!parseGeoJSONPolygonCoordinates(coordinates, obj, out->s2Polygon.get())) {
-                return BAD_VALUE_STATUS;
-            }
+            status = parseGeoJSONPolygonCoordinates(coordinates, out->s2Polygon.get());
         }
         else if (out->crs == STRICT_SPHERE) {
             out->bigPolygon.reset(new BigSimplePolygon());
-            if (!parseBigSimplePolygonCoordinates(coordinates, obj, out->bigPolygon.get())) {
-                return BAD_VALUE_STATUS;
-            }
+            status = parseBigSimplePolygonCoordinates(coordinates, out->bigPolygon.get());
         }
-        return Status::OK();
+        return status;
     }
 
     bool GeoParser::isBox(const BSONObj &obj) {
@@ -616,7 +656,7 @@ namespace mongo {
         for (size_t i = 0; i < coordElt.size(); ++i) {
             out->polygons.mutableVector()[i] = new S2Polygon();
             if (!parseGeoJSONPolygonCoordinates(
-                    coordElt[i].Array(), obj, out->polygons.vector()[i])) {
+                    coordElt[i], out->polygons.vector()[i]).isOK()) {
                 return false;
             }
         }
@@ -724,6 +764,7 @@ namespace mongo {
         // Center
         BSONElement center = objIt.next();
         Point p;
+        // Check the object has and only has 2 numbers.
         Status status = newParseLegacyPoint(center, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
