@@ -50,6 +50,8 @@ namespace mongo {
         static Status newParseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out);
         static Status newParseCenterSphere(const BSONObj& obj, CapWithCRS *out);
         static Status newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out);
+        static Status newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out);
+        static Status newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out);
 
         static bool isPoint(const BSONObj &obj);
         // Legacy points can contain extra data as extra fields - these are valid to index

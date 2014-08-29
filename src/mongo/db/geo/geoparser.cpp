@@ -53,6 +53,14 @@ namespace mongo {
     static const string GEOJSON_COORDINATES = "coordinates";
     static const string GEOJSON_GEOMETRIES = "geometries";
 
+    // Coordinate System Reference
+    // see http://portal.opengeospatial.org/files/?artifact_id=24045
+    // and http://spatialreference.org/ref/epsg/4326/
+    // and http://www.geojson.org/geojson-spec.html#named-crs
+    static const string CRS_CRS84 = "urn:ogc:def:crs:OGC:1.3:CRS84";
+    static const string CRS_EPSG_4326 = "EPSG:4326";
+    static const string CRS_STRICT_WINDING = "urn:mongodb:strictwindingcrs:EPSG:4326";
+
     // XXX Return better errors for all bad values
     static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
 
@@ -415,6 +423,44 @@ namespace mongo {
         return true;
     }
 
+    // Parse "crs" field of BSON object.
+    // "crs": {
+    //   "type": "name",
+    //   "properties": {
+    //     "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
+    //    }
+    // }
+    static Status newParseGeoJSONCRS(const BSONObj &obj, CRS* crs) {
+        BSONElement crsElt = obj["crs"];
+        // "crs" field doesn't exist, return the default SPHERE
+        if (crsElt.eoo()) {
+            *crs = SPHERE;
+            return Status::OK();
+        }
+
+        if (!crsElt.isABSONObj()) return BAD_VALUE_STATUS;
+        BSONObj crsObj = crsElt.embeddedObject();
+
+        // "type": "name"
+        if (String != crsObj["type"].type() || "name" != crsObj["type"].String())
+            return BAD_VALUE_STATUS;
+
+        // "properties"
+        BSONElement propertiesElt = crsObj["properties"];
+        if (!propertiesElt.isABSONObj()) return BAD_VALUE_STATUS;
+        BSONObj propertiesObj = propertiesElt.embeddedObject();
+        if (String != propertiesObj["name"].type()) return BAD_VALUE_STATUS;
+        const string& name = propertiesObj["name"].String();
+        if (CRS_CRS84 == name || CRS_EPSG_4326 == name) {
+            *crs = SPHERE;
+        } else if (CRS_STRICT_WINDING == name) {
+            *crs = STRICT_SPHERE;
+        } else {
+            return BAD_VALUE_STATUS;
+        }
+        return Status::OK();
+    }
+
     /** exported **/
 
     bool GeoParser::isPoint(const BSONObj &obj) {
@@ -499,14 +545,56 @@ namespace mongo {
         return Status::OK();
     }
 
-    Status GeoParser::newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
-        const BSONElement coordinates = obj.getFieldDotted(GEOJSON_COORDINATES);
+    // { "type": "Point", "coordinates": [100.0, 0.0] }
+    Status GeoParser::newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out) {
+        Status status = Status::OK();
+        // "crs"
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
+        out->crs = FLAT;
 
-        // XXX: check is CRS ok.
-        if (!parseGeoJSONCRS(obj, &out->crs))
+        // "coordinates"
+        status = newParseLegacyPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
+        if (!status.isOK()) return status;
+
+        // Projection
+        if (!ShapeProjection::supportsProject(*out, SPHERE))
             return BAD_VALUE_STATUS;
+        ShapeProjection::projectInto(out, SPHERE);
+        return Status::OK();
+    }
+
+    // { "type": "LineString", "coordinates": [ [100.0, 0.0], [101.0, 1.0] ] }
+    Status GeoParser::newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out)  {
+        Status status = Status::OK();
+        // "crs"
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
+
+        // "coordinates"
+        vector<S2Point> vertices;
+        status = newParseArrayOfCoodinates(obj[GEOJSON_COORDINATES], &vertices);
+        if (!status.isOK()) return status;
+
+        eraseDuplicatePoints(&vertices);
+        if (vertices.size() < 2) return BAD_VALUE_STATUS;
+
+        // XXX change to status
+        if (!S2Polyline::IsValid(vertices)) return BAD_VALUE_STATUS;
+        out->line.Init(vertices);
+        out->crs = SPHERE;
+        return Status::OK();
+    }
+
+    Status GeoParser::newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
+        const BSONElement coordinates = obj[GEOJSON_COORDINATES];
 
         Status status = Status::OK();
+        // "crs"
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
+
+        // "coordinates"
         if (out->crs == SPHERE) {
             out->s2Polygon.reset(new S2Polygon());
             status = parseGeoJSONPolygonCoordinates(coordinates, out->s2Polygon.get());
