@@ -44,6 +44,7 @@ namespace mongo {
     class GeoParser {
     public:
 
+        static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false);
         // Parse the BSON object after $box, $center, etc.
         static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
         static Status newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out);

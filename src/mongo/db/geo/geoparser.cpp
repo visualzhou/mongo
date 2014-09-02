@@ -98,7 +98,7 @@ namespace mongo {
         return true;
     }
 
-    static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
+    Status GeoParser::newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields) {
         if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
         BSONObjIterator it(elem.Obj());
         BSONElement x = it.next();
@@ -130,7 +130,7 @@ namespace mongo {
         if (Array != elem.type()) { return BAD_VALUE_STATUS; }
         Point p;
         // Check the object has and only has 2 numbers.
-        Status status = newParseLegacyPoint(elem, &p);
+        Status status = GeoParser::newParseLegacyPoint(elem, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
         *out = coordToPoint(p.x, p.y);

@@ -44,6 +44,209 @@ using namespace mongo;
 
 namespace {
 
+    TEST(GeoParser, parseGeoJSONPoint) {
+        PointWithCRS point;
+
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [40, 5]}"), &point));
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [-40.3, -5.0]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordhats': [40, -5]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': 40}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [40, -5, 7]}"), &point));
+
+        // Make sure lat is in range
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [0, 90.0]}"), &point));
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [0, -90.0]}"), &point));
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [180, 90.0]}"), &point));
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [-180, -90.0]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [180.01, 90.0]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [-180.01, -90.0]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [0, 90.1]}"), &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [0, -90.1]}"), &point));
+    }
+
+    TEST(GeoParser, parseGeoJSONLine) {
+        LineWithCRS polyline;
+
+        ASSERT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[1,2], [3,4]]}"), &polyline));
+        ASSERT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[0,-90], [0,90]]}"), &polyline));
+        ASSERT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[180,-90], [-180,90]]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[180.1,-90], [-180.1,90]]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[0,-91], [0,90]]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[0,-90], [0,91]]}"), &polyline));
+        ASSERT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[1,2], [3,4], [5,6]]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[1,2]]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[['chicken','little']]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[1,2, 3, 4]}"), &polyline));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(
+            fromjson("{'type':'LineString', 'coordinates':[[1,2, 3], [3,4, 5], [5,6]]}"), &polyline));
+    }
+
+    TEST(GeoParser, parseGeoJSONPolygon) {
+        PolygonWithCRS polygon;
+
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]] ]}"), &polygon));
+        // No out of bounds points
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,91],[0,5],[0,0]] ]}"), &polygon));
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[180,0],[5,5],[0,5],[0,0]] ]}"), &polygon));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[181,0],[5,5],[0,5],[0,0]] ]}"), &polygon));
+        // And one with a hole.
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]],"
+                     " [[1,1],[4,1],[4,4],[1,4],[1,1]] ]}"), &polygon));
+        // Latitudes must be OK
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,91],[0,91],[0,0]],"
+                     " [[1,1],[4,1],[4,4],[1,4],[1,1]] ]}"), &polygon));
+        // First point must be the same as the last.
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[1,2],[3,4],[5,6]] ]}"), &polygon));
+
+
+        // Test functionality of polygon
+        PointWithCRS point;
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(
+            fromjson("{'type':'Point', 'coordinates': [2, 2]}"), &point));
+
+        PolygonWithCRS polygonA;
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]] ]}"),
+            &polygonA));
+        ASSERT_TRUE(polygonA.s2Polygon->Contains(point.point));
+
+        PolygonWithCRS polygonB;
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]],"
+                     " [[1,1],[1,4],[4,4],[4,1],[1,1]] ]}"),
+            &polygonB));
+        // We removed this in the hole.
+        ASSERT_FALSE(polygonB.s2Polygon->Contains(point.point));
+
+        // Now we reverse the orientations and verify that the code fixes it up
+        // (outer loop must be CCW, inner CW).
+        PolygonWithCRS polygonC;
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[0,5],[5,5],[5,0],[0,0]] ]}"),
+            &polygonC));
+        ASSERT_TRUE(polygonC.s2Polygon->Contains(point.point));
+
+        PolygonWithCRS polygonD;
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[0,5],[5,5],[5,0],[0,0]],"
+                     " [[1,1],[1,4],[4,4],[4,1],[1,1]] ]}"),
+            &polygonD));
+        // Also removed in the loop.
+        ASSERT_FALSE(polygonD.s2Polygon->Contains(point.point));
+
+        //
+        // Bad polygon examples
+        //
+
+        // Polygon with not enough points, because some are duplicated
+        PolygonWithCRS polygonBad;
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(
+            fromjson("{'type':'Polygon', 'coordinates':[[ [0,0], [0,0], [5,5], [5,5], [0,0] ]]}"),
+            &polygonBad));
+    }
+
+
+    TEST(GeoParser, parseGeoJSONCRS) {
+        string goodCRS1 = "crs:{ type: 'name', properties:{name:'EPSG:4326'}}";
+        string goodCRS2 = "crs:{ type: 'name', properties:{name:'urn:ogc:def:crs:OGC:1.3:CRS84'}}";
+        string badCRS1 = "crs:{ type: 'name', properties:{name:'EPSG:2000'}}";
+        string badCRS2 = "crs:{ type: 'name', properties:{name:'urn:ogc:def:crs:OGC:1.3:CRS83'}}";
+
+        BSONObj point1 = fromjson("{'type':'Point', 'coordinates': [40, 5], " + goodCRS1 + "}");
+        BSONObj point2 = fromjson("{'type':'Point', 'coordinates': [40, 5], " + goodCRS2 + "}");
+        PointWithCRS point;
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(point1, &point));
+        ASSERT_OK(GeoParser::newParseGeoJSONPoint(point2, &point));
+        BSONObj point3 = fromjson("{'type':'Point', 'coordinates': [40, 5], " + badCRS1 + "}");
+        BSONObj point4 = fromjson("{'type':'Point', 'coordinates': [40, 5], " + badCRS2 + "}");
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(point3, &point));
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPoint(point4, &point));
+
+        PolygonWithCRS polygon;
+        BSONObj polygon1 = fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]],"
+                                    " [[1,1],[1,4],[4,4],[4,1],[1,1]] ]," + goodCRS1 + "}");
+        ASSERT_OK(GeoParser::newParseGeoJSONPolygon(polygon1, &polygon));
+        BSONObj polygon2 = fromjson("{'type':'Polygon', 'coordinates':[ [[0,0],[5,0],[5,5],[0,5],[0,0]],"
+                                    " [[1,1],[1,4],[4,4],[4,1],[1,1]] ]," + badCRS2 + "}");
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONPolygon(polygon2, &polygon));
+
+        LineWithCRS line;
+        BSONObj line1 = fromjson("{'type':'LineString', 'coordinates':[[1,2], [3,4], [5,6]]," + goodCRS2 + "}");
+        ASSERT_OK(GeoParser::newParseGeoJSONLine(line1, &line));
+        BSONObj line2 = fromjson("{'type':'LineString', 'coordinates':[[1,2], [3,4], [5,6]]," + badCRS1 + "}");
+        ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(line2, &line));
+    }
+
+    // Test helper for GeoParser::newParseLegacyPoint(const BSONElement &elem, Point *out)
+    Status testPaserLegacyPoint(const BSONObj& pointObj) {
+        mongo::Point point;
+        BSONObj obj = BSON("p" << pointObj);
+        return GeoParser::newParseLegacyPoint(obj.firstElement(), &point);
+    }
+
+    TEST(GeoParser, parseLegacyPoint) {
+        ASSERT_OK(testPaserLegacyPoint(BSON_ARRAY(0 << 1)));
+        ASSERT_NOT_OK(testPaserLegacyPoint(BSON_ARRAY(0)));
+        ASSERT_NOT_OK(testPaserLegacyPoint(BSON_ARRAY(0 << 1 << 2)));
+        ASSERT_OK(testPaserLegacyPoint(fromjson("{x: 50, y:40}")));
+        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: '50', y:40}")));
+        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: 5, y:40, z:50}")));
+        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: 5}")));
+    }
+
+
+    TEST(GeoParser, parseLegacyPolygon) {
+        PolygonWithCRS polygon;
+
+        // Parse the object after field name "$polygon"
+        ASSERT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("[[10,20],[10,40],[30,40],[30,20]]"), &polygon));
+        ASSERT(polygon.crs == FLAT);
+
+        ASSERT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("[[10,20], [10,40], [30,40]]"), &polygon));
+        ASSERT(polygon.crs == FLAT);
+
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("[[10,20],[10,40]]"), &polygon));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("[['10',20],[10,40],[30,40],[30,20]]"), &polygon));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("[[10,20,30],[10,40],[30,40],[30,20]]"), &polygon));
+        ASSERT_OK(GeoParser::newParseLegacyPolygon(
+            fromjson("{a:{x:40,y:5},b:{x:40,y:6},c:{x:41,y:6},d:{x:41,y:5}}"), &polygon));
+    }
+
     TEST(GeoParser, isValidPoint) {
         ASSERT_TRUE(GeoParser::isPoint(fromjson("{'type':'Point', 'coordinates': [40, 5]}")));
         ASSERT_TRUE(GeoParser::isPoint(
