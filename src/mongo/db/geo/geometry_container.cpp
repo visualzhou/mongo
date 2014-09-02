@@ -797,12 +797,12 @@ namespace mongo {
         return false;
     }
 
-    static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
-
     Status GeometryContainer::parseFromGeoJSON(const BSONObj& obj) {
         GeoParser::GeoJSONType type = GeoParser::parseGeoJSONType(obj);
 
-        if (GeoParser::GEOJSON_UNKNOWN == type) return BAD_VALUE_STATUS;
+        if (GeoParser::GEOJSON_UNKNOWN == type) {
+            return Status(ErrorCodes::BadValue, str::stream() << "unknown GeoJSON type: " << obj);
+        }
 
         Status status = Status::OK();
         vector<S2Region*> regions;
@@ -898,7 +898,7 @@ namespace mongo {
 
         if (GeoParser::UNKNOWN == specifier) {
             // Cannot parse geo specifier.
-            return BAD_VALUE_STATUS;
+            return Status(ErrorCodes::BadValue, str::stream() << "unknown geo specifier: " << elem);
         }
 
         Status status = Status::OK();

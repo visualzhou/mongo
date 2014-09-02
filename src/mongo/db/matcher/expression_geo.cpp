@@ -47,6 +47,7 @@ namespace mongo {
     GeoExpression::GeoExpression() : field(""), predicate(INVALID) {}
     GeoExpression::GeoExpression(const std::string& f) : field(f), predicate(INVALID) {}
 
+    // XXX: Dead code
     bool GeoExpression::parseLegacyQuery(const BSONObj &obj) {
         // The only legacy syntax is {$within: {.....}}
         BSONObjIterator outerIt(obj);
@@ -82,6 +83,7 @@ namespace mongo {
         return hasGeometry;
     }
 
+    // XXX: Dead code
     bool GeoExpression::parseNewQuery(const BSONObj &obj) {
         // pointA = { "type" : "Point", "coordinates": [ 40, 5 ] }
         // t.find({ "geo" : { "$intersect" : { "$geometry" : pointA} } })
@@ -134,10 +136,73 @@ namespace mongo {
         return hasGeometry;
     }
 
+    Status GeoExpression::parseQuery(const BSONObj &obj) {
+        BSONObjIterator outerIt(obj);
+        // "within" / "geoWithin" / "geoIntersects"
+        BSONElement queryElt = outerIt.next();
+        if (outerIt.more()) {
+            return Status(ErrorCodes::BadValue,
+                          str::stream() << "can't parse extra field: " << outerIt.next());
+        }
+
+        BSONObj::MatchType matchType = static_cast<BSONObj::MatchType>(queryElt.getGtLtOp());
+        if (BSONObj::opGEO_INTERSECTS == matchType) {
+            predicate = GeoExpression::INTERSECT;
+        } else if (BSONObj::opWITHIN == matchType) {
+            predicate = GeoExpression::WITHIN;
+        } else {
+            // eoo() or unknown query predicate.
+            return Status(ErrorCodes::BadValue,
+                          str::stream() << "invalid geo query predicate: " << obj);
+        }
+
+        // Parse geometry after predicates.
+        if (Object != queryElt.type()) return Status(ErrorCodes::BadValue, "geometry must be an object");
+        BSONObj geoObj = queryElt.Obj();
+
+        BSONObjIterator geoIt(geoObj);
+
+        // "$box", "$center", "$geometry", etc.
+        Status status = geoContainer->parseFromQuery(geoIt.next());
+        if (!status.isOK()) return status;
+
+        if (FLAT == geoContainer->getNativeCRS() && GeoExpression::INTERSECT == predicate) {
+            return Status(ErrorCodes::BadValue, "can't query $geoIntersects with legacy shapes");
+        }
+
+        // Deprecated "$uniqueDocs" field
+        if (geoIt.more() && str::equals(geoIt.next().fieldName(), "$uniqueDocs")) {
+            warning() << "deprecated $uniqueDocs option: " << obj.toString() << endl;
+        }
+
+        // No more extra fields
+        if (geoIt.more()) {
+            return Status(ErrorCodes::BadValue,
+                          str::stream() << "can't parse extra field: " << geoIt.next());
+        }
+
+        // Why do we only deal with $within {polygon}?
+        // 1. Finding things within a point is silly and only valid
+        // for points and degenerate lines/polys.
+        //
+        // 2. Finding points within a line is easy but that's called intersect.
+        // Finding lines within a line is kind of tricky given what S2 gives us.
+        // Doing line-within-line is a valid yet unsupported feature,
+        // though I wonder if we want to preserve orientation for lines or
+        // allow (a,b),(c,d) to be within (c,d),(a,b).  Anyway, punt on
+        // this for now.
+        if (GeoExpression::WITHIN == predicate && !geoContainer->supportsContains()) {
+            return Status(ErrorCodes::BadValue,
+                          str::stream() << "$within not supported with provided geometry: " << obj);
+        }
+        return Status::OK();
+    }
+
     bool GeoExpression::parseFrom(const BSONObj &obj) {
         geoContainer.reset(new GeometryContainer());
-        if (!(parseLegacyQuery(obj) || parseNewQuery(obj)))
+        if (!parseQuery(obj).isOK()) {
             return false;
+        }
 
         // Big polygon with strict winding order is represented as an S2Loop in SPHERE CRS.
         // So converting the query to SPHERE CRS makes things easier than projecting all the data
