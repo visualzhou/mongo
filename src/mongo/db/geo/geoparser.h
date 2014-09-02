@@ -44,6 +44,19 @@ namespace mongo {
     class GeoParser {
     public:
 
+        enum GeoJSONType {
+            GEOJSON_POINT,
+            GEOJSON_LINESTRING,
+            GEOJSON_POLYGON,
+            GEOJSON_MULTI_POINT,
+            GEOJSON_MULTI_LINESTRING,
+            GEOJSON_MULTI_POLYGON,
+            GEOJSON_GEOMETRY_COLLECTION,
+            GEOJSON_UNKNOWN
+        };
+
+        static GeoJSONType parseGeoJSONType(const BSONObj& obj);
+
         static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false);
         // Parse the BSON object after $box, $center, etc.
         static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
@@ -84,7 +97,7 @@ namespace mongo {
         static Status parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);
 
         static bool isGeometryCollection(const BSONObj &obj);
-        static bool parseGeometryCollection(const BSONObj &obj, GeometryCollection *out);
+        static Status parseGeometryCollection(const BSONObj &obj, GeometryCollection *out);
 
         static bool parsePointWithMaxDistance(const BSONObj& obj, PointWithCRS* out, double* maxOut);
 

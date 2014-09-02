@@ -917,43 +917,60 @@ namespace mongo {
         }
     }
 
-    bool GeoParser::parseGeometryCollection(const BSONObj &obj, GeometryCollection *out) {
+    //  { "type": "GeometryCollection",
+    //    "geometries": [
+    //      { "type": "Point",
+    //        "coordinates": [100.0, 0.0]
+    //      },
+    //      { "type": "LineString",
+    //        "coordinates": [ [101.0, 0.0], [102.0, 1.0] ]
+    //      }
+    //    ]
+    //  }
+    Status GeoParser::parseGeometryCollection(const BSONObj &obj, GeometryCollection *out) {
         BSONElement coordElt = obj.getFieldDotted(GEOJSON_GEOMETRIES);
+        if (Array != coordElt.type()) { return BAD_VALUE_STATUS; }
+
         const vector<BSONElement>& geometries = coordElt.Array();
+        if (0 == geometries.size()) { return BAD_VALUE_STATUS; }
 
         for (size_t i = 0; i < geometries.size(); ++i) {
-            const BSONObj& geoObj = geometries[i].Obj();
+            if (Object != geometries[i].type()) return BAD_VALUE_STATUS;
 
-            if (isGeoJSONPoint(geoObj)) {
-                PointWithCRS point;
-                if (!parsePoint(geoObj, &point)) { return false; }
-                out->points.push_back(point);
-            } else if (isLine(geoObj)) {
+            const BSONObj& geoObj = geometries[i].Obj();
+            GeoJSONType type = parseGeoJSONType(geoObj);
+
+            if (GEOJSON_UNKNOWN == type || GEOJSON_GEOMETRY_COLLECTION == type) return BAD_VALUE_STATUS;
+
+            Status status = Status::OK();
+            if (GEOJSON_POINT == type) {
+                out->points.resize(out->points.size() + 1);
+                status = newParseGeoJSONPoint(geoObj, &out->points.back());
+            } else if (GEOJSON_LINESTRING == type) {
                 out->lines.mutableVector().push_back(new LineWithCRS());
-                if (!parseLine(geoObj, out->lines.vector().back())) { return false; }
-            } else if (isGeoJSONPolygon(geoObj)) {
+                status = newParseGeoJSONLine(geoObj, out->lines.vector().back());
+            } else if (GEOJSON_POLYGON == type) {
                 out->polygons.mutableVector().push_back(new PolygonWithCRS());
-                if (!parsePolygon(geoObj, out->polygons.vector().back())) { return false; }
-            } else if (isMultiPoint(geoObj)) {
+                status = newParseGeoJSONPolygon(geoObj, out->polygons.vector().back());
+            } else if (GEOJSON_MULTI_POINT == type) {
                 out->multiPoints.mutableVector().push_back(new MultiPointWithCRS());
-                if (!parseMultiPoint(geoObj, out->multiPoints.mutableVector().back()).isOK()) {
-                    return false;
-                }
-            } else if (isMultiPolygon(geoObj)) {
-                out->multiPolygons.mutableVector().push_back(new MultiPolygonWithCRS());
-                if (!parseMultiPolygon(geoObj, out->multiPolygons.mutableVector().back()).isOK()) {
-                    return false;
-                }
-            } else {
-                verify(isMultiLine(geoObj));
+                status = parseMultiPoint(geoObj, out->multiPoints.mutableVector().back());
+            } else if (GEOJSON_MULTI_LINESTRING == type) {
                 out->multiLines.mutableVector().push_back(new MultiLineWithCRS());
-                if (!parseMultiLine(geoObj, out->multiLines.mutableVector().back()).isOK()) {
-                    return false;
-                }
+                status = parseMultiLine(geoObj, out->multiLines.mutableVector().back());
+            } else if (GEOJSON_MULTI_POLYGON == type) {
+                out->multiPolygons.mutableVector().push_back(new MultiPolygonWithCRS());
+                status = parseMultiPolygon(geoObj, out->multiPolygons.mutableVector().back());
+            } else {
+                // Should not reach here.
+                invariant(false);
             }
+
+            // Check parsing result.
+            if (!status.isOK()) return status;
         }
 
-        return true;
+        return Status::OK();
     }
 
     bool GeoParser::parsePointWithMaxDistance(const BSONObj& obj, PointWithCRS* out, double* maxOut) {
@@ -977,6 +994,28 @@ namespace mongo {
         out->crs = FLAT;
         *maxOut = dist.number();
         return true;
+    }
+
+    GeoParser::GeoJSONType GeoParser::parseGeoJSONType(const BSONObj& obj) {
+        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
+        if (String != type.type()) { return GeoParser::GEOJSON_UNKNOWN; }
+        const string& typeString = type.String();
+        if (GEOJSON_TYPE_POINT == typeString) {
+            return GeoParser::GEOJSON_POINT;
+        } else if (GEOJSON_TYPE_LINESTRING == typeString) {
+            return GeoParser::GEOJSON_LINESTRING;
+        } else if (GEOJSON_TYPE_POLYGON == typeString) {
+            return GeoParser::GEOJSON_POLYGON;
+        } else if (GEOJSON_TYPE_MULTI_POINT == typeString) {
+            return GeoParser::GEOJSON_MULTI_POINT;
+        } else if (GEOJSON_TYPE_MULTI_LINESTRING == typeString) {
+            return GeoParser::GEOJSON_MULTI_LINESTRING;
+        } else if (GEOJSON_TYPE_MULTI_POLYGON == typeString) {
+            return GeoParser::GEOJSON_MULTI_POLYGON;
+        } else if (GEOJSON_TYPE_GEOMETRY_COLLECTION == typeString) {
+            return GeoParser::GEOJSON_GEOMETRY_COLLECTION;
+        }
+        return GeoParser::GEOJSON_UNKNOWN;
     }
 
 }  // namespace mongo

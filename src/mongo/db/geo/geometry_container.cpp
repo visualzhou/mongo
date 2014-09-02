@@ -837,7 +837,7 @@ namespace mongo {
             }
         } else if (GeoParser::isGeometryCollection(obj)) {
             _geometryCollection.reset(new GeometryCollection());
-            if (!GeoParser::parseGeometryCollection(obj, _geometryCollection.get())) {
+            if (!GeoParser::parseGeometryCollection(obj, _geometryCollection.get()).isOK()) {
                 return false;
             }
             _s2Region.reset(new S2RegionUnion());
