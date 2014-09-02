@@ -433,9 +433,9 @@ namespace mongo {
     // }
     static Status newParseGeoJSONCRS(const BSONObj &obj, CRS* crs) {
         BSONElement crsElt = obj["crs"];
+        *crs = SPHERE;
         // "crs" field doesn't exist, return the default SPHERE
         if (crsElt.eoo()) {
-            *crs = SPHERE;
             return Status::OK();
         }
 
@@ -492,6 +492,7 @@ namespace mongo {
     bool GeoParser::parsePoint(const BSONObj &obj, PointWithCRS *out) {
         if (isLegacyPoint(obj, true)) {
             parseLegacyPoint(obj, &out->oldPoint);
+            out->crs = FLAT;
         } else if (isGeoJSONPoint(obj)) {
             const vector<BSONElement>& coords = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
             out->oldPoint.x = coords[0].Number();

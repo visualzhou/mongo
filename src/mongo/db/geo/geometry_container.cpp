@@ -45,6 +45,7 @@ namespace mongo {
 
     bool GeometryContainer::supportsContains() const {
         return NULL != _polygon
+               || NULL != _box
                || NULL != _cap
                || NULL != _multiPolygon
                || (NULL != _geometryCollection
