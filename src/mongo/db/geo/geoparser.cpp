@@ -997,6 +997,23 @@ namespace mongo {
         return true;
     }
 
+    GeoParser::GeoSpecifier GeoParser::parseGeoSpecifier(const BSONElement& type) {
+        if (!type.isABSONObj()) { return GeoParser::UNKNOWN; }
+        const char* fieldName = type.fieldName();
+        if (mongoutils::str::equals(fieldName, "$box")) {
+            return GeoParser::BOX;
+        } else if (mongoutils::str::equals(fieldName, "$center")) {
+            return GeoParser::CENTER;
+        } else if (mongoutils::str::equals(fieldName, "$polygon")) {
+            return GeoParser::POLYGON;
+        } else if (mongoutils::str::equals(fieldName, "$centerSphere")) {
+            return GeoParser::CENTER_SPHERE;
+        } else if (mongoutils::str::equals(fieldName, "$geometry")) {
+            return GeoParser::GEOMETRY;
+        }
+        return GeoParser::UNKNOWN;
+    }
+
     GeoParser::GeoJSONType GeoParser::parseGeoJSONType(const BSONObj& obj) {
         BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
         if (String != type.type()) { return GeoParser::GEOJSON_UNKNOWN; }

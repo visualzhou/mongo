@@ -797,6 +797,138 @@ namespace mongo {
         return false;
     }
 
+    static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
+
+    Status GeometryContainer::parseFromGeoJSON(const BSONObj& obj) {
+        GeoParser::GeoJSONType type = GeoParser::parseGeoJSONType(obj);
+
+        if (GeoParser::GEOJSON_UNKNOWN == type) return BAD_VALUE_STATUS;
+
+        Status status = Status::OK();
+        vector<S2Region*> regions;
+
+        if (GeoParser::GEOJSON_POINT == type) {
+            _point.reset(new PointWithCRS());
+            status = GeoParser::newParseGeoJSONPoint(obj, _point.get());
+        } else if (GeoParser::GEOJSON_LINESTRING == type) {
+            _line.reset(new LineWithCRS());
+            status = GeoParser::newParseGeoJSONLine(obj, _line.get());
+        } else if (GeoParser::GEOJSON_POLYGON == type) {
+            _polygon.reset(new PolygonWithCRS());
+            status = GeoParser::newParseGeoJSONPolygon(obj, _polygon.get());
+        } else if (GeoParser::GEOJSON_MULTI_POINT == type) {
+            _multiPoint.reset(new MultiPointWithCRS());
+            status = GeoParser::parseMultiPoint(obj, _multiPoint.get());
+            for (size_t i = 0; i < _multiPoint->cells.size(); ++i) {
+                regions.push_back(&_multiPoint->cells[i]);
+            }
+        } else if (GeoParser::GEOJSON_MULTI_LINESTRING == type) {
+            _multiLine.reset(new MultiLineWithCRS());
+            status = GeoParser::parseMultiLine(obj, _multiLine.get());
+            for (size_t i = 0; i < _multiLine->lines.size(); ++i) {
+                regions.push_back(_multiLine->lines[i]);
+            }
+        } else if (GeoParser::GEOJSON_MULTI_POLYGON == type) {
+            _multiPolygon.reset(new MultiPolygonWithCRS());
+            status = GeoParser::parseMultiPolygon(obj, _multiPolygon.get());
+            for (size_t i = 0; i < _multiPolygon->polygons.size(); ++i) {
+                regions.push_back(_multiPolygon->polygons[i]);
+            }
+        } else if (GeoParser::GEOJSON_GEOMETRY_COLLECTION == type) {
+            _geometryCollection.reset(new GeometryCollection());
+            status = GeoParser::parseGeometryCollection(obj, _geometryCollection.get());
+
+            // Add regions
+            for (size_t i = 0; i < _geometryCollection->points.size(); ++i) {
+                regions.push_back(&_geometryCollection->points[i].cell);
+            }
+            for (size_t i = 0; i < _geometryCollection->lines.size(); ++i) {
+                regions.push_back(&_geometryCollection->lines[i]->line);
+            }
+            for (size_t i = 0; i < _geometryCollection->polygons.size(); ++i) {
+                regions.push_back(_geometryCollection->polygons[i]->s2Polygon.get());
+            }
+            for (size_t i = 0; i < _geometryCollection->multiPoints.size(); ++i) {
+                MultiPointWithCRS* multiPoint = _geometryCollection->multiPoints[i];
+                for (size_t j = 0; j < multiPoint->cells.size(); ++j) {
+                    regions.push_back(&multiPoint->cells[j]);
+                }
+            }
+            for (size_t i = 0; i < _geometryCollection->multiLines.size(); ++i) {
+                const MultiLineWithCRS* multiLine = _geometryCollection->multiLines[i];
+                for (size_t j = 0; j < multiLine->lines.size(); ++j) {
+                    regions.push_back(multiLine->lines[j]);
+                }
+            }
+            for (size_t i = 0; i < _geometryCollection->multiPolygons.size(); ++i) {
+                const MultiPolygonWithCRS* multiPolygon = _geometryCollection->multiPolygons[i];
+                for (size_t j = 0; j < multiPolygon->polygons.size(); ++j) {
+                    regions.push_back(multiPolygon->polygons[j]);
+                }
+            }
+        } else {
+            // Should not reach here.
+            invariant(false);
+        }
+
+        // Check parsing result.
+        if (!status.isOK()) return status;
+
+        if (regions.size() > 0) {
+            // S2RegionUnion doesn't take ownership of pointers.
+            _s2Region.reset(new S2RegionUnion(&regions));
+        }
+
+        return Status::OK();
+    }
+
+    // Examples:
+    // { $geoWithin : { $geometry : <GeoJSON> } }
+    // { $geoIntersects : { $geometry : <GeoJSON> } }
+    // { $geoWithin : { $box : [[x1, y1], [x2, y2]] } }
+    // { $geoWithin : { $polygon : [[x1, y1], [x1, y2], [x2, y2], [x2, y1]] } }
+    // { $geoWithin : { $center : [[x1, y1], r], } }
+    // { $geoWithin : { $centerSphere : [[x, y], radius] } }
+    //
+    // "elem" is the first element of the object after $geoWithin / $geoIntersects predicates.
+    // i.e. { $box: ... }, { $geometry: ... }
+    Status GeometryContainer::parseFromQuery(const BSONElement& elem) {
+        // Check elem is an object and has geo specifier.
+        GeoParser::GeoSpecifier specifier = GeoParser::parseGeoSpecifier(elem);
+
+        if (GeoParser::UNKNOWN == specifier) {
+            // Cannot parse geo specifier.
+            return BAD_VALUE_STATUS;
+        }
+
+        Status status = Status::OK();
+        BSONObj obj = elem.Obj();
+        if (GeoParser::BOX == specifier) {
+            _box.reset(new BoxWithCRS());
+            status = GeoParser::newParseLegacyBox(obj, _box.get());
+        } else if (GeoParser::CENTER == specifier) {
+            _cap.reset(new CapWithCRS());
+            status = GeoParser::newParseLegacyCenter(obj, _cap.get());
+        } else if (GeoParser::POLYGON == specifier) {
+            _polygon.reset(new PolygonWithCRS());
+            status = GeoParser::newParseLegacyPolygon(obj, _polygon.get());
+        } else if (GeoParser::CENTER_SPHERE == specifier) {
+            _cap.reset(new CapWithCRS());
+            status = GeoParser::newParseCenterSphere(obj, _cap.get());
+        } else if (GeoParser::GEOMETRY == specifier) {
+            // GeoJSON geometry
+            status = parseFromGeoJSON(obj);
+        }
+        if (!status.isOK()) return status;
+
+        // If we support R2 regions, build the region immediately
+        if (hasR2Region()) {
+            _r2Region.reset(new R2BoxRegion(this));
+        }
+
+        return status;
+    }
+
     bool GeometryContainer::parseFrom(const BSONObj& obj) {
 
         if (GeoParser::isPolygon(obj)) {

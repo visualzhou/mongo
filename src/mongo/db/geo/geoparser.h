@@ -44,6 +44,15 @@ namespace mongo {
     class GeoParser {
     public:
 
+        enum GeoSpecifier {
+            BOX,
+            CENTER,
+            POLYGON,
+            CENTER_SPHERE,
+            GEOMETRY, // GeoJSON geometry
+            UNKNOWN
+        };
+
         enum GeoJSONType {
             GEOJSON_POINT,
             GEOJSON_LINESTRING,
@@ -55,6 +64,7 @@ namespace mongo {
             GEOJSON_UNKNOWN
         };
 
+        static GeoSpecifier parseGeoSpecifier(const BSONElement& elem);
         static GeoJSONType parseGeoJSONType(const BSONObj& obj);
 
         static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false);

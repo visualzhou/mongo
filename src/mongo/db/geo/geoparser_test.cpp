@@ -44,6 +44,21 @@ using namespace mongo;
 
 namespace {
 
+    TEST(GeoParser, parseGeoSpecifier) {
+        ASSERT_EQUALS(GeoParser::parseGeoSpecifier(
+                fromjson("{$box : [[1, 2], [3, 4]]}").firstElement()),
+            GeoParser::BOX);
+        ASSERT_EQUALS(GeoParser::parseGeoSpecifier(
+                fromjson("{$center : [[0, 0], 4]}").firstElement()),
+            GeoParser::CENTER);
+        ASSERT_EQUALS(GeoParser::parseGeoSpecifier(
+                fromjson("{$centerSphere : [[0, 0], 1]}").firstElement()),
+            GeoParser::CENTER_SPHERE);
+        ASSERT_EQUALS(GeoParser::parseGeoSpecifier(
+                fromjson("{$geometry : {'type':'Point', 'coordinates': [40, 5]}}").firstElement()),
+            GeoParser::GEOMETRY);
+    }
+
     TEST(GeoParser, parseGeoJSONPoint) {
         PointWithCRS point;
 
