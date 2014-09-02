@@ -247,6 +247,82 @@ namespace {
             fromjson("{a:{x:40,y:5},b:{x:40,y:6},c:{x:41,y:6},d:{x:41,y:5}}"), &polygon));
     }
 
+    TEST(GeoParser, parseMultiPoint) {
+        mongo::MultiPointWithCRS mp;
+
+        ASSERT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[1,2],[3,4]]}"), &mp));
+        ASSERT_EQUALS(mp.points.size(), (size_t)2);
+
+        ASSERT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[3,4]]}"), &mp));
+        ASSERT_EQUALS(mp.points.size(), (size_t)1);
+
+        ASSERT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[1,2],[3,4],[5,6],[7,8]]}"), &mp));
+        ASSERT_EQUALS(mp.points.size(), (size_t)4);
+
+        ASSERT_NOT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[]}"), &mp));
+        ASSERT_NOT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[181,2],[3,4]]}"), &mp));
+        ASSERT_NOT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[1,-91],[3,4]]}"), &mp));
+        ASSERT_NOT_OK(GeoParser::parseMultiPoint(
+            fromjson("{'type':'MultiPoint','coordinates':[[181,2],[3,'chicken']]}"), &mp));
+    }
+
+    TEST(GeoParser, parseMultiLine) {
+        mongo::MultiLineWithCRS ml;
+
+        ASSERT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1],[2,2],[3,3]],"
+                                                               "[[4,5],[6,7]]]}"), &ml));
+        ASSERT_EQUALS(ml.lines.size(), (size_t)2);
+
+        ASSERT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1],[2,2]],"
+                                                       "[[4,5],[6,7]]]}"), &ml));
+        ASSERT_EQUALS(ml.lines.size(), (size_t)2);
+
+        ASSERT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1],[2,2]]]}"), &ml));
+        ASSERT_EQUALS(ml.lines.size(), (size_t)1);
+
+        ASSERT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1],[2,2]],"
+                                                               "[[2,2],[1,1]]]}"), &ml));
+        ASSERT_EQUALS(ml.lines.size(), (size_t)2);
+
+        ASSERT_NOT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1]]]}"), &ml));
+        ASSERT_NOT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[1,1]],[[1,2],[3,4]]]}"), &ml));
+        ASSERT_NOT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[181,1],[2,2]]]}"), &ml));
+        ASSERT_NOT_OK(GeoParser::parseMultiLine(
+            fromjson("{'type':'MultiLineString','coordinates':[ [[181,1],[2,-91]]]}"), &ml));
+    }
+
+    TEST(GeoParser, parseMultiPolygon) {
+        mongo::MultiPolygonWithCRS mp;
+
+        ASSERT_OK(GeoParser::parseMultiPolygon(
+            fromjson("{'type':'MultiPolygon','coordinates':["
+                "[[[102.0, 2.0], [103.0, 2.0], [103.0, 3.0], [102.0, 3.0], [102.0, 2.0]]],"
+                "[[[100.0, 0.0], [101.0, 0.0], [101.0, 1.0], [100.0, 1.0], [100.0, 0.0]],"
+                 "[[100.2, 0.2], [100.8, 0.2], [100.8, 0.8], [100.2, 0.8], [100.2, 0.2]]]"
+                 "]}"), &mp));
+        ASSERT_EQUALS(mp.polygons.size(), (size_t)2);
+
+        ASSERT_OK(GeoParser::parseMultiPolygon(
+            fromjson("{'type':'MultiPolygon','coordinates':["
+                "[[[100.0, 0.0], [101.0, 0.0], [101.0, 1.0], [100.0, 1.0], [100.0, 0.0]],"
+                 "[[100.2, 0.2], [100.8, 0.2], [100.8, 0.8], [100.2, 0.8], [100.2, 0.2]]]"
+                 "]}"), &mp));
+        ASSERT_EQUALS(mp.polygons.size(), (size_t)1);
+    }
+
     TEST(GeoParser, isValidPoint) {
         ASSERT_TRUE(GeoParser::isPoint(fromjson("{'type':'Point', 'coordinates': [40, 5]}")));
         ASSERT_TRUE(GeoParser::isPoint(

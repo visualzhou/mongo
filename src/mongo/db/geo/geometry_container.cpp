@@ -816,21 +816,21 @@ namespace mongo {
             if (!GeoParser::parseCap(obj, _cap.get())) { return false; }
         } else if (GeoParser::isMultiPoint(obj)) {
             _multiPoint.reset(new MultiPointWithCRS());
-            if (!GeoParser::parseMultiPoint(obj, _multiPoint.get())) { return false; }
+            if (!GeoParser::parseMultiPoint(obj, _multiPoint.get()).isOK()) { return false; }
             _s2Region.reset(new S2RegionUnion());
             for (size_t i = 0; i < _multiPoint->cells.size(); ++i) {
                 _s2Region->Add(&_multiPoint->cells[i]);
             }
         } else if (GeoParser::isMultiLine(obj)) {
             _multiLine.reset(new MultiLineWithCRS());
-            if (!GeoParser::parseMultiLine(obj, _multiLine.get())) { return false; }
+            if (!GeoParser::parseMultiLine(obj, _multiLine.get()).isOK()) { return false; }
             _s2Region.reset(new S2RegionUnion());
             for (size_t i = 0; i < _multiLine->lines.vector().size(); ++i) {
                 _s2Region->Add(_multiLine->lines.vector()[i]);
             }
         } else if (GeoParser::isMultiPolygon(obj)) {
             _multiPolygon.reset(new MultiPolygonWithCRS());
-            if (!GeoParser::parseMultiPolygon(obj, _multiPolygon.get())) { return false; }
+            if (!GeoParser::parseMultiPolygon(obj, _multiPolygon.get()).isOK()) { return false; }
             _s2Region.reset(new S2RegionUnion());
             for (size_t i = 0; i < _multiPolygon->polygons.vector().size(); ++i) {
                 _s2Region->Add(_multiPolygon->polygons.vector()[i]);

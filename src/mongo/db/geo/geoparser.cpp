@@ -137,6 +137,7 @@ namespace mongo {
         return Status::OK();
     }
 
+    // "coordinates": [ [100.0, 0.0], [101.0, 1.0] ]
     static Status newParseArrayOfCoodinates(const BSONElement& elem, vector<S2Point>* out) {
         if (Array != elem.type()) { return BAD_VALUE_STATUS; }
         BSONObjIterator it(elem.Obj());
@@ -461,6 +462,23 @@ namespace mongo {
         return Status::OK();
     }
 
+    // Parse "coordinates" field of GeoJSON LineString
+    // e.g. "coordinates": [ [100.0, 0.0], [101.0, 1.0] ]
+    // Or a line in "coordinates" field of GeoJSON MultiLineString
+    static Status newParseGeoJSONLineCoordinates(const BSONElement& elem, S2Polyline* out) {
+        vector<S2Point> vertices;
+        Status status = newParseArrayOfCoodinates(elem, &vertices);
+        if (!status.isOK()) return status;
+
+        eraseDuplicatePoints(&vertices);
+        if (vertices.size() < 2) return BAD_VALUE_STATUS;
+
+        // XXX change to status
+        if (!S2Polyline::IsValid(vertices)) return BAD_VALUE_STATUS;
+        out->Init(vertices);
+        return Status::OK();
+    }
+
     /** exported **/
 
     bool GeoParser::isPoint(const BSONObj &obj) {
@@ -572,16 +590,9 @@ namespace mongo {
         if (!status.isOK()) return status;
 
         // "coordinates"
-        vector<S2Point> vertices;
-        status = newParseArrayOfCoodinates(obj[GEOJSON_COORDINATES], &vertices);
+        status = newParseGeoJSONLineCoordinates(obj[GEOJSON_COORDINATES], &out->line);
         if (!status.isOK()) return status;
 
-        eraseDuplicatePoints(&vertices);
-        if (vertices.size() < 2) return BAD_VALUE_STATUS;
-
-        // XXX change to status
-        if (!S2Polyline::IsValid(vertices)) return BAD_VALUE_STATUS;
-        out->line.Init(vertices);
         out->crs = SPHERE;
         return Status::OK();
     }
@@ -657,20 +668,24 @@ namespace mongo {
         return isArrayOfCoordinates(coordinates);
     }
 
-    bool GeoParser::parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out) {
+    Status GeoParser::parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out) {
+        Status status = Status::OK();
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
+
         out->points.clear();
         BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        out->points.resize(coordinates.size());
-        out->cells.resize(coordinates.size());
-        for (size_t i = 0; i < coordinates.size(); ++i) {
-            const vector<BSONElement>& thisCoord = coordinates[i].Array();
-            out->points[i] = coordToPoint(thisCoord[0].Number(), thisCoord[1].Number());
+        status = newParseArrayOfCoodinates(coordElt, &out->points);
+        if (!status.isOK()) return status;
+
+        if (0 == out->points.size()) return BAD_VALUE_STATUS;
+        out->cells.resize(out->points.size());
+        for (size_t i = 0; i < out->points.size(); ++i) {
             out->cells[i] = S2Cell(out->points[i]);
         }
         out->crs = SPHERE;
 
-        return true;
+        return Status::OK();
     }
 
     bool GeoParser::isMultiLine(const BSONObj &obj) {
@@ -697,20 +712,29 @@ namespace mongo {
         return true;
     }
 
-    bool GeoParser::parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out) {
-        vector<BSONElement> coordElt = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
-        out->lines.mutableVector().clear();
-        out->lines.mutableVector().resize(coordElt.size());
+    Status GeoParser::parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out) {
+        Status status = Status::OK();
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
 
-        for (size_t i = 0; i < coordElt.size(); ++i) {
-            vector<S2Point> vertices;
-            if (!parsePoints(coordElt[i].Array(), &vertices)) { return false; }
-            out->lines.mutableVector()[i] = new S2Polyline();
-            out->lines.mutableVector()[i]->Init(vertices);
+        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
+        if (Array != coordElt.type()) return BAD_VALUE_STATUS;
+
+        vector<S2Polyline*>& lines = out->lines.mutableVector();
+        lines.clear();
+
+        BSONObjIterator it(coordElt.Obj());
+
+        // Iterate array
+        while (it.more()) {
+            lines.push_back(new S2Polyline());
+            status = newParseGeoJSONLineCoordinates(it.next(), lines.back());
+            if (!status.isOK()) return status;
         }
+        if (0 == lines.size()) { return BAD_VALUE_STATUS; }
         out->crs = SPHERE;
 
-        return true;
+        return Status::OK();
     }
 
     bool GeoParser::isMultiPolygon(const BSONObj &obj) {
@@ -736,21 +760,28 @@ namespace mongo {
         return true;
     }
 
-    bool GeoParser::parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out) {
-        vector<BSONElement> coordElt = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
-        out->polygons.mutableVector().clear();
-        out->polygons.mutableVector().resize(coordElt.size());
+    Status GeoParser::parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out) {
+        Status status = Status::OK();
+        status = newParseGeoJSONCRS(obj, &out->crs);
+        if (!status.isOK()) return status;
 
-        for (size_t i = 0; i < coordElt.size(); ++i) {
-            out->polygons.mutableVector()[i] = new S2Polygon();
-            if (!parseGeoJSONPolygonCoordinates(
-                    coordElt[i], out->polygons.vector()[i]).isOK()) {
-                return false;
-            }
+        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
+        if (Array != coordElt.type()) return BAD_VALUE_STATUS;
+
+        vector<S2Polygon*>& polygons = out->polygons.mutableVector();
+        polygons.clear();
+
+        BSONObjIterator it(coordElt.Obj());
+        // Iterate array
+        while (it.more()) {
+            polygons.push_back(new S2Polygon());
+            status = parseGeoJSONPolygonCoordinates(it.next(), polygons.back());
+            if (!status.isOK()) return status;
         }
+        if (0 == polygons.size()) { return BAD_VALUE_STATUS; }
         out->crs = SPHERE;
 
-        return true;
+        return Status::OK();
     }
 
     bool GeoParser::isGeometryCollection(const BSONObj &obj) {
@@ -905,18 +936,18 @@ namespace mongo {
                 if (!parsePolygon(geoObj, out->polygons.vector().back())) { return false; }
             } else if (isMultiPoint(geoObj)) {
                 out->multiPoints.mutableVector().push_back(new MultiPointWithCRS());
-                if (!parseMultiPoint(geoObj, out->multiPoints.mutableVector().back())) {
+                if (!parseMultiPoint(geoObj, out->multiPoints.mutableVector().back()).isOK()) {
                     return false;
                 }
             } else if (isMultiPolygon(geoObj)) {
                 out->multiPolygons.mutableVector().push_back(new MultiPolygonWithCRS());
-                if (!parseMultiPolygon(geoObj, out->multiPolygons.mutableVector().back())) {
+                if (!parseMultiPolygon(geoObj, out->multiPolygons.mutableVector().back()).isOK()) {
                     return false;
                 }
             } else {
                 verify(isMultiLine(geoObj));
                 out->multiLines.mutableVector().push_back(new MultiLineWithCRS());
-                if (!parseMultiLine(geoObj, out->multiLines.mutableVector().back())) {
+                if (!parseMultiLine(geoObj, out->multiLines.mutableVector().back()).isOK()) {
                     return false;
                 }
             }

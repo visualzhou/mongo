@@ -54,6 +54,7 @@ namespace mongo {
         static Status newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out);
         static Status newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out);
 
+        // XXX: Remove
         static bool isPoint(const BSONObj &obj);
         // Legacy points can contain extra data as extra fields - these are valid to index
         static bool isIndexablePoint(const BSONObj& obj);
@@ -71,15 +72,16 @@ namespace mongo {
         // AKA $center or $centerSphere
         static bool isCap(const BSONObj &obj);
         static bool parseCap(const BSONObj &obj, CapWithCRS *out);
+        // XXX: Remove above
 
         static bool isMultiPoint(const BSONObj &obj);
-        static bool parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out);
+        static Status parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out);
 
         static bool isMultiLine(const BSONObj &obj);
-        static bool parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out);
+        static Status parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out);
 
         static bool isMultiPolygon(const BSONObj &obj);
-        static bool parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);
+        static Status parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);
 
         static bool isGeometryCollection(const BSONObj &obj);
         static bool parseGeometryCollection(const BSONObj &obj, GeometryCollection *out);
