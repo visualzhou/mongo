@@ -78,26 +78,15 @@ namespace mongo {
         static Status newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out);
         static Status newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out);
         static Status newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out);
-
-        // XXX: Remove
-        static bool isPoint(const BSONObj &obj);
-        // Legacy points can contain extra data as extra fields - these are valid to index
-        static bool isIndexablePoint(const BSONObj& obj);
-        static bool parsePoint(const BSONObj &obj, PointWithCRS *out);
-
         static Status parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out);
         static Status parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out);
         static Status parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);
         static Status parseGeometryCollection(const BSONObj &obj, GeometryCollection *out);
 
+        // For geo near
+        static Status parseQueryPoint(const BSONElement &elem, PointWithCRS *out);
+        static Status parseStoredPoint(const BSONElement &elem, PointWithCRS *out);
         static bool parsePointWithMaxDistance(const BSONObj& obj, PointWithCRS* out, double* maxOut);
-
-        // Return true if the CRS field is 1. missing, or 2. is well-formed and
-        // has a datum we accept.  Otherwise, return false.
-        // NOTE(hk): If this is ever used anywhere but internally, consider
-        // returning states: missing, invalid, unknown, ok, etc. -- whatever
-        // needed.
-        static bool crsIsOK(const BSONObj& obj);
     };
 
 }  // namespace mongo

@@ -326,12 +326,8 @@ namespace mongo {
                 if (!e.isABSONObj())
                     return false;
 
-                if (!GeoParser::isIndexablePoint(e.Obj()))
-                    return false;
-
                 PointWithCRS point;
-                if (!GeoParser::parsePoint(e.Obj(), &point))
-                    return false;
+                if (!GeoParser::parseStoredPoint(e, &point).isOK()) return false;
 
                 return _annulus.contains(point.oldPoint);
             }

@@ -64,40 +64,6 @@ namespace mongo {
     // XXX Return better errors for all bad values
     static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
 
-    static bool isGeoJSONPoint(const BSONObj& obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_POINT != type.String()) { return false; }
-
-        if (!GeoParser::crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        if (coordinates.size() != 2) { return false; }
-        if (!coordinates[0].isNumber() || !coordinates[1].isNumber()) { return false; }
-        // For now, we assume all GeoJSON must be within WGS84 - this may change
-        double lat = coordinates[1].Number();
-        double lng = coordinates[0].Number();
-        return isValidLngLat(lng, lat);
-    }
-
-    static bool isLegacyPoint(const BSONObj &obj, bool allowAddlFields) {
-        BSONObjIterator it(obj);
-        if (!it.more()) { return false; }
-        BSONElement x = it.next();
-        if (!x.isNumber()) { return false; }
-        if (!it.more()) { return false; }
-        BSONElement y = it.next();
-        if (!y.isNumber()) { return false; }
-        if (it.more() && !allowAddlFields) { return false; }
-        return true;
-    }
-
     static Status newParseFlatPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
         if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
         BSONObjIterator it(elem.Obj());
@@ -284,15 +250,6 @@ namespace mongo {
         return Status::OK();
     }
 
-    static bool parseLegacyPoint(const BSONObj &obj, Point *out) {
-        BSONObjIterator it(obj);
-        BSONElement x = it.next();
-        BSONElement y = it.next();
-        out->x = x.number();
-        out->y = y.number();
-        return true;
-    }
-
     // Parse "crs" field of BSON object.
     // "crs": {
     //   "type": "name",
@@ -348,30 +305,29 @@ namespace mongo {
         return Status::OK();
     }
 
-    /** exported **/
+    // Parse legacy point or GeoJSON point, used by geo near.
+    // Only stored legacy points allow additional fields.
+    Status parsePoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields) {
+        if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
 
-    bool GeoParser::isPoint(const BSONObj &obj) {
-        return isLegacyPoint(obj, false) || isGeoJSONPoint(obj);
-    }
-
-    bool GeoParser::isIndexablePoint(const BSONObj &obj) {
-        return isLegacyPoint(obj, true) || isGeoJSONPoint(obj);
-    }
-
-    bool GeoParser::parsePoint(const BSONObj &obj, PointWithCRS *out) {
-        if (isLegacyPoint(obj, true)) {
-            parseLegacyPoint(obj, &out->oldPoint);
-            out->crs = FLAT;
-        } else if (isGeoJSONPoint(obj)) {
-            const vector<BSONElement>& coords = obj.getFieldDotted(GEOJSON_COORDINATES).Array();
-            out->oldPoint.x = coords[0].Number();
-            out->oldPoint.y = coords[1].Number();
-            out->crs = FLAT;
-            if (!ShapeProjection::supportsProject(*out, SPHERE))
-                return false;
-            ShapeProjection::projectInto(out, SPHERE);
+        BSONObj obj = elem.Obj();
+        // location: [1, 2] or location: {x: 1, y:2}
+        if (Array == elem.type() || obj.firstElement().isNumber()) {
+            // Legacy point
+            return GeoParser::newParseLegacyPoint(elem, out, allowAddlFields);
         }
-        return true;
+
+        // GeoJSON point. location: { type: "Point", coordinates: [1, 2] }
+        return GeoParser::newParseGeoJSONPoint(obj, out);
+    }
+
+    /** exported **/
+    Status GeoParser::parseStoredPoint(const BSONElement &elem, PointWithCRS *out) {
+        return parsePoint(elem, out, true);
+    }
+
+    Status GeoParser::parseQueryPoint(const BSONElement &elem, PointWithCRS *out) {
+        return parsePoint(elem, out, false);
     }
 
     Status GeoParser::newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out) {
@@ -529,30 +485,6 @@ namespace mongo {
         return Status::OK();
     }
 
-    bool GeoParser::crsIsOK(const BSONObj &obj) {
-        if (!obj.hasField("crs")) { return true; }
-
-        if (!obj["crs"].isABSONObj()) { return false; }
-
-        BSONObj crsObj = obj["crs"].embeddedObject();
-        if (!crsObj.hasField("type")) { return false; }
-        if (String != crsObj["type"].type()) { return false; }
-        if ("name" != crsObj["type"].String()) { return false; }
-        if (!crsObj.hasField("properties")) { return false; }
-        if (!crsObj["properties"].isABSONObj()) { return false; }
-
-        BSONObj propertiesObj = crsObj["properties"].embeddedObject();
-        if (!propertiesObj.hasField("name")) { return false; }
-        if (String != propertiesObj["name"].type()) { return false; }
-        const string& name = propertiesObj["name"].String();
-
-        // see http://portal.opengeospatial.org/files/?artifact_id=24045
-        // and http://spatialreference.org/ref/epsg/4326/
-        // and http://www.geojson.org/geojson-spec.html#named-crs
-        return ("urn:ogc:def:crs:OGC:1.3:CRS84" == name) || ("EPSG:4326" == name) ||
-               ("urn:mongodb:strictwindingcrs:EPSG:4326" == name);
-    }
-
     Status GeoParser::newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out) {
         BSONObjIterator objIt(obj);
 
@@ -561,7 +493,7 @@ namespace mongo {
         Status status = newParseFlatPoint(center, &out->circle.center);
         if (!status.isOK()) return status;
 
-        // Redius
+        // Radius
         BSONElement radius = objIt.next();
         if (!radius.isNumber() || radius.number() < 0) { return BAD_VALUE_STATUS; }
 

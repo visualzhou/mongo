@@ -172,7 +172,7 @@ namespace mongo {
                 if (!e.isABSONObj()) { return false; }
                 BSONObj embeddedObj = e.embeddedObject();
 
-                if ((GeoParser::isPoint(embeddedObj) && GeoParser::parsePoint(embeddedObj, centroid.get()))
+                if (GeoParser::parseQueryPoint(e, centroid.get()).isOK()
                     || GeoParser::parsePointWithMaxDistance(embeddedObj, centroid.get(), &maxDistance)) {
                     uassert(18522, "max distance must be non-negative", maxDistance >= 0.0);
                     hasGeometry = true;
@@ -228,12 +228,12 @@ namespace mongo {
             if (equals(e.fieldName(), "$geometry")) {
                 if (e.isABSONObj()) {
                     BSONObj embeddedObj = e.embeddedObject();
-                    uassert(16885, "$near requires a point, given " + embeddedObj.toString(),
-                            GeoParser::isPoint(embeddedObj));
-                    if (!GeoParser::parsePoint(embeddedObj, centroid.get())) {
-                        return Status(ErrorCodes::BadValue, mongoutils::str::stream() <<
-                                      "invalid point in geo near query $geometry argument: " <<
-                                      embeddedObj);
+                    Status status = GeoParser::parseQueryPoint(e, centroid.get());
+                    if (!status.isOK()) {
+                        return Status(ErrorCodes::BadValue,
+                                      str::stream()
+                                              << "invalid point in geo near query $geometry argument: "
+                                              << embeddedObj << "  " << status.reason());
                     }
                     uassert(16681, "$near requires geojson point, given " + embeddedObj.toString(),
                             (SPHERE == centroid->crs));
