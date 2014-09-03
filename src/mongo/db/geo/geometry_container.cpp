@@ -929,6 +929,44 @@ namespace mongo {
         return status;
     }
 
+    // Examples:
+    // { location: <GeoJSON> }
+    // { location: [1, 2] }
+    // { location: [1, 2, 3] }
+    // { location: {x: 1, y: 2} }
+    //
+    // "elem" is the element that contains geo data. e.g. "location": [1, 2]
+    // We need the type information to determine whether it's legacy point.
+    Status GeometryContainer::parseFromStorage(const BSONElement& elem) {
+        if (!elem.isABSONObj()) {
+            return Status(ErrorCodes::BadValue,
+                          str::stream() << "geo element must be an array or object: " << elem);
+        }
+
+        BSONObj geoObj = elem.Obj();
+        Status status = Status::OK();
+        if (Array == elem.type() || geoObj.firstElement().isNumber()) {
+            // Legacy point
+            // { location: [1, 2] }
+            // { location: [1, 2, 3] }
+            // { location: {x: 1, y: 2} }
+            // { location: {x: 1, y: 2, type: "Point" } }
+            _point.reset(new PointWithCRS());
+            // Allow more than two dimensions or extra fields, like [1, 2, 3]
+            status = GeoParser::newParseLegacyPoint(elem, _point.get(), true);
+        } else {
+            // GeoJSON
+            // { location: { type: "Point", coordinates: [...] } }
+            status = parseFromGeoJSON(elem.Obj());
+        }
+        if (!status.isOK()) return status;
+
+        // If we support R2 regions, build the region immediately
+        if (hasR2Region()) _r2Region.reset(new R2BoxRegion(this));
+
+        return Status::OK();
+    }
+
     bool GeometryContainer::parseFrom(const BSONObj& obj) {
 
         if (GeoParser::isPolygon(obj)) {

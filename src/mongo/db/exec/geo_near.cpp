@@ -68,7 +68,7 @@ namespace mongo {
                     return NULL;
 
                 auto_ptr<StoredGeometry> stored(new StoredGeometry);
-                if (!stored->geometry.parseFrom(element.Obj()))
+                if (!stored->geometry.parseFromStorage(element).isOK())
                     return NULL;
                 stored->element = element;
                 return stored.release();

@@ -51,6 +51,11 @@ namespace mongo {
         Status parseFromQuery(const BSONElement& elem);
 
         /**
+         * Loads an empty GeometryContainer from stored geometry.
+         */
+        Status parseFromStorage(const BSONElement& elem);
+
+        /**
          * Loads an empty GeometryContainer from BSON
          */
         bool parseFrom(const BSONObj &obj);

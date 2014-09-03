@@ -408,7 +408,7 @@ namespace mongo {
             return false;
 
         GeometryContainer geometry;
-        if ( !geometry.parseFrom( e.Obj() ) )
+        if ( !geometry.parseFromStorage( e ).isOK() )
                 return false;
 
         // Never match big polygon
