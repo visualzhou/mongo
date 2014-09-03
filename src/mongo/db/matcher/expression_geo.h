@@ -67,10 +67,6 @@ namespace mongo {
         // { "$intersect" : { "$geometry" : { "type" : "Point", "coordinates": [ 40, 5 ] } } }
         Status parseQuery(const BSONObj &obj);
 
-        // Try to parse the provided object into the right place.
-        bool parseLegacyQuery(const BSONObj &obj);
-        bool parseNewQuery(const BSONObj &obj);
-
         // Name of the field in the query.
         std::string field;
         boost::scoped_ptr<GeometryContainer> geoContainer;

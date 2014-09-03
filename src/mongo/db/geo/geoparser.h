@@ -67,6 +67,8 @@ namespace mongo {
         static GeoSpecifier parseGeoSpecifier(const BSONElement& elem);
         static GeoJSONType parseGeoJSONType(const BSONObj& obj);
 
+        // Legacy points can contain extra data as extra fields - these are valid to index
+        // e.g. { x: 1, y: 1, z: 1 }
         static Status newParseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields = false);
         // Parse the BSON object after $box, $center, etc.
         static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
@@ -83,30 +85,9 @@ namespace mongo {
         static bool isIndexablePoint(const BSONObj& obj);
         static bool parsePoint(const BSONObj &obj, PointWithCRS *out);
 
-        static bool isLine(const BSONObj &obj);
-        static bool parseLine(const BSONObj &obj, LineWithCRS *out);
-
-        static bool isBox(const BSONObj &obj);
-        static bool parseBox(const BSONObj &obj, BoxWithCRS *out);
-
-        static bool isPolygon(const BSONObj &obj);
-        static bool parsePolygon(const BSONObj &obj, PolygonWithCRS *out);
-
-        // AKA $center or $centerSphere
-        static bool isCap(const BSONObj &obj);
-        static bool parseCap(const BSONObj &obj, CapWithCRS *out);
-        // XXX: Remove above
-
-        static bool isMultiPoint(const BSONObj &obj);
         static Status parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out);
-
-        static bool isMultiLine(const BSONObj &obj);
         static Status parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out);
-
-        static bool isMultiPolygon(const BSONObj &obj);
         static Status parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);
-
-        static bool isGeometryCollection(const BSONObj &obj);
         static Status parseGeometryCollection(const BSONObj &obj, GeometryCollection *out);
 
         static bool parsePointWithMaxDistance(const BSONObj& obj, PointWithCRS* out, double* maxOut);
@@ -117,7 +98,6 @@ namespace mongo {
         // returning states: missing, invalid, unknown, ok, etc. -- whatever
         // needed.
         static bool crsIsOK(const BSONObj& obj);
-        static bool parseGeoJSONCRS(const BSONObj& obj, CRS* crs);
     };
 
 }  // namespace mongo

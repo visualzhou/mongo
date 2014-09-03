@@ -56,11 +56,6 @@ namespace mongo {
         Status parseFromStorage(const BSONElement& elem);
 
         /**
-         * Loads an empty GeometryContainer from BSON
-         */
-        bool parseFrom(const BSONObj &obj);
-
-        /**
          * Is the geometry any of {Point, Line, Polygon}?
          */
         bool isSimpleContainer() const;

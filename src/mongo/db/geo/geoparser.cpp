@@ -157,7 +157,6 @@ namespace mongo {
         return Status::OK();
     }
 
-
     static void eraseDuplicatePoints(vector<S2Point>* vertices) {
         for (size_t i = 1; i < vertices->size(); ++i) {
             if ((*vertices)[i - 1] == (*vertices)[i]) {
@@ -168,50 +167,9 @@ namespace mongo {
         }
     }
 
-    static bool isArrayOfCoordinates(const vector<BSONElement>& coordinateArray) {
-        for (size_t i = 0; i < coordinateArray.size(); ++i) {
-            // Each coordinate should be an array
-            if (Array != coordinateArray[i].type()) { return false; }
-            // ...of two
-            const vector<BSONElement> &thisCoord = coordinateArray[i].Array();
-            if (2 != thisCoord.size()) { return false; }
-            // ...numbers.
-            for (size_t j = 0; j < thisCoord.size(); ++j) {
-                if (!thisCoord[j].isNumber()) { return false; }
-            }
-            // ...where the longitude, latitude is valid
-            double lat = thisCoord[1].Number();
-            double lng = thisCoord[0].Number();
-            if (!isValidLngLat(lng, lat)) { return false; }
-        }
-        return true;
-    }
-
     static Status newIsLoopClosed(const vector<S2Point>& loop) {
         if (loop.empty() || loop[0] != loop[loop.size() - 1]) return BAD_VALUE_STATUS;
         return Status::OK();
-    }
-
-    static bool parsePoints(const vector<BSONElement>& coordElt, vector<S2Point>* out) {
-        for (size_t i = 0; i < coordElt.size(); ++i) {
-            const vector<BSONElement>& pointElt = coordElt[i].Array();
-            if (pointElt.empty()) { continue; }
-            if (!isValidLngLat(pointElt[0].Number(), pointElt[1].Number())) {
-                return false;
-            }
-            out->push_back(coordToPoint(pointElt[0].Number(), pointElt[1].Number()));
-        }
-
-        return true;
-    }
-
-    static bool isValidLineString(const vector<BSONElement>& coordinateArray) {
-        if (coordinateArray.size() < 2) { return false; }
-        if (!isArrayOfCoordinates(coordinateArray)) { return false; }
-        vector<S2Point> vertices;
-        if (!parsePoints(coordinateArray, &vertices)) { return false; }
-        eraseDuplicatePoints(&vertices);
-        return S2Polyline::IsValid(vertices);
     }
 
     static Status parseGeoJSONPolygonCoordinates(const BSONElement& elem, S2Polygon *out) {
@@ -335,101 +293,6 @@ namespace mongo {
         return true;
     }
 
-    // Coordinates looks like [[0,0],[5,0],[5,5],[0,5],[0,0]]
-    static bool isLoopClosed(const vector<BSONElement>& coordinates) {
-        double x1, y1, x2, y2;
-        x1 = coordinates[0].Array()[0].Number();
-        y1 = coordinates[0].Array()[1].Number();
-        x2 = coordinates[coordinates.size() - 1].Array()[0].Number();
-        y2 = coordinates[coordinates.size() - 1].Array()[1].Number();
-        return (fabs(x1 - x2) < 1e-6) && fabs(y1 - y2) < 1e-6;
-    }
-
-    static bool isGeoJSONPolygonCoordinates(const vector<BSONElement>& coordinates) {
-        // Must be at least one element, the outer shell
-        if (coordinates.empty()) { return false; }
-        // Verify that the shell is a bunch'a coordinates.
-        for (size_t i = 0; i < coordinates.size(); ++i) {
-            if (Array != coordinates[i].type()) { return false; }
-            const vector<BSONElement>& thisLoop = coordinates[i].Array();
-            // A triangle is the simplest 2d shape, and we repeat a vertex, so, 4.
-            if (thisLoop.size() < 4) { return false; }
-            if (!isArrayOfCoordinates(thisLoop)) { return false; }
-            if (!isLoopClosed(thisLoop)) { return false; }
-        }
-        return true;
-    }
-
-    static bool isGeoJSONPolygon(const BSONObj& obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_POLYGON != type.String()) { return false; }
-
-        if (!GeoParser::crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        return isGeoJSONPolygonCoordinates(coordElt.Array());
-    }
-
-    static bool isLegacyPolygon(const BSONObj &obj) {
-        BSONObjIterator typeIt(obj);
-        BSONElement type = typeIt.next();
-        if (!type.isABSONObj()) { return false; }
-        if (!mongoutils::str::equals(type.fieldName(), "$polygon")) { return false; }
-        BSONObjIterator coordIt(type.embeddedObject());
-        int vertices = 0;
-        while (coordIt.more()) {
-            BSONElement coord = coordIt.next();
-            if (!coord.isABSONObj()) { return false; }
-            if (!isLegacyPoint(coord.Obj(), false)) { return false; }
-            ++vertices;
-        }
-        if (vertices < 3) { return false; }
-        return true;
-    }
-
-    static bool isLegacyCenter(const BSONObj &obj) {
-        BSONObjIterator typeIt(obj);
-        BSONElement type = typeIt.next();
-        if (!type.isABSONObj()) { return false; }
-        bool isCenter = mongoutils::str::equals(type.fieldName(), "$center");
-        if (!isCenter) { return false; }
-        BSONObjIterator objIt(type.embeddedObject());
-        BSONElement center = objIt.next();
-        if (!center.isABSONObj()) { return false; }
-        if (!isLegacyPoint(center.Obj(), false)) { return false; }
-        if (!objIt.more()) { return false; }
-        BSONElement radius = objIt.next();
-        if (!radius.isNumber()) { return false; }
-        return true;
-    }
-
-    static bool isLegacyCenterSphere(const BSONObj &obj) {
-        BSONObjIterator typeIt(obj);
-        BSONElement type = typeIt.next();
-        if (!type.isABSONObj()) { return false; }
-        bool isCenterSphere = mongoutils::str::equals(type.fieldName(), "$centerSphere");
-        if (!isCenterSphere) { return false; }
-        BSONObjIterator objIt(type.embeddedObject());
-        BSONElement center = objIt.next();
-        if (!center.isABSONObj()) { return false; }
-        if (!isLegacyPoint(center.Obj(), false)) { return false; }
-        // Check to make sure the points are valid lng/lat.
-        BSONObjIterator coordIt(center.Obj());
-        BSONElement lng = coordIt.next();
-        BSONElement lat = coordIt.next();
-        if (!isValidLngLat(lng.Number(), lat.Number())) { return false; }
-        if (!objIt.more()) { return false; }
-        BSONElement radius = objIt.next();
-        if (!radius.isNumber()) { return false; }
-        return true;
-    }
-
     // Parse "crs" field of BSON object.
     // "crs": {
     //   "type": "name",
@@ -508,33 +371,6 @@ namespace mongo {
                 return false;
             ShapeProjection::projectInto(out, SPHERE);
         }
-        return true;
-    }
-
-    bool GeoParser::isLine(const BSONObj& obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_LINESTRING != type.String()) { return false; }
-
-        if (!crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        return isValidLineString(coordElt.Array());
-    }
-
-    bool GeoParser::parseLine(const BSONObj& obj, LineWithCRS* out) {
-        vector<S2Point> vertices;
-        if (!parsePoints(obj.getFieldDotted(GEOJSON_COORDINATES).Array(), &vertices)) {
-            return false;
-        }
-        eraseDuplicatePoints(&vertices);
-        out->line.Init(vertices);
-        out->crs = SPHERE;
         return true;
     }
 
@@ -624,57 +460,6 @@ namespace mongo {
         return status;
     }
 
-    bool GeoParser::isBox(const BSONObj &obj) {
-        BSONObjIterator typeIt(obj);
-        BSONElement type = typeIt.next();
-        if (!type.isABSONObj()) { return false; }
-        if (!mongoutils::str::equals(type.fieldName(), "$box")) { return false; }
-        BSONObjIterator coordIt(type.embeddedObject());
-        BSONElement minE = coordIt.next();
-        if (!minE.isABSONObj()) { return false; }
-        if (!isLegacyPoint(minE.Obj(), false)) { return false; }
-        if (!coordIt.more()) { return false; }
-        BSONElement maxE = coordIt.next();
-        if (!maxE.isABSONObj()) { return false; }
-        if (!isLegacyPoint(maxE.Obj(), false)) { return false; }
-        // XXX: VERIFY AREA >= 0
-        return true;
-    }
-
-    bool GeoParser::parseBox(const BSONObj &obj, BoxWithCRS *out) {
-        BSONObjIterator typeIt(obj);
-        BSONElement type = typeIt.next();
-        return GeoParser::newParseLegacyBox(type.Obj(), out).isOK();
-    }
-
-    bool GeoParser::parsePolygon(const BSONObj &obj, PolygonWithCRS *out) {
-        if (isGeoJSONPolygon(obj)) {
-            return newParseGeoJSONPolygon(obj, out).isOK();
-        } else {
-            BSONObjIterator typeIt(obj);
-            BSONElement type = typeIt.next();
-            return newParseLegacyPolygon(type.Obj(), out).isOK();
-        }
-    }
-
-    bool GeoParser::isMultiPoint(const BSONObj &obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_MULTI_POINT != type.String()) { return false; }
-
-        if (!crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        if (0 == coordinates.size()) { return false; }
-        return isArrayOfCoordinates(coordinates);
-    }
-
     Status GeoParser::parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out) {
         Status status = Status::OK();
         status = newParseGeoJSONCRS(obj, &out->crs);
@@ -693,30 +478,6 @@ namespace mongo {
         out->crs = SPHERE;
 
         return Status::OK();
-    }
-
-    bool GeoParser::isMultiLine(const BSONObj &obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_MULTI_LINESTRING != type.String()) { return false; }
-
-        if (!crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        if (0 == coordinates.size()) { return false; }
-
-        for (size_t i = 0; i < coordinates.size(); ++i) {
-            if (coordinates[i].eoo() || (Array != coordinates[i].type())) { return false; }
-            if (!isValidLineString(coordinates[i].Array())) { return false; }
-        }
-
-        return true;
     }
 
     Status GeoParser::parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out) {
@@ -744,29 +505,6 @@ namespace mongo {
         return Status::OK();
     }
 
-    bool GeoParser::isMultiPolygon(const BSONObj &obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_MULTI_POLYGON != type.String()) { return false; }
-
-        if (!crsIsOK(obj)) {
-            warning() << "Invalid CRS: " << obj.toString() << endl;
-            return false;
-        }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        if (0 == coordinates.size()) { return false; }
-        for (size_t i = 0; i < coordinates.size(); ++i) {
-            if (coordinates[i].eoo() || (Array != coordinates[i].type())) { return false; }
-            if (!isGeoJSONPolygonCoordinates(coordinates[i].Array())) { return false; }
-        }
-
-        return true;
-    }
-
     Status GeoParser::parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out) {
         Status status = Status::OK();
         status = newParseGeoJSONCRS(obj, &out->crs);
@@ -791,33 +529,6 @@ namespace mongo {
         return Status::OK();
     }
 
-    bool GeoParser::isGeometryCollection(const BSONObj &obj) {
-        BSONElement type = obj.getFieldDotted(GEOJSON_TYPE);
-        if (type.eoo() || (String != type.type())) { return false; }
-        if (GEOJSON_TYPE_GEOMETRY_COLLECTION != type.String()) { return false; }
-
-        BSONElement coordElt = obj.getFieldDotted(GEOJSON_GEOMETRIES);
-        if (coordElt.eoo() || (Array != coordElt.type())) { return false; }
-
-        const vector<BSONElement>& coordinates = coordElt.Array();
-        if (0 == coordinates.size()) { return false; }
-
-        for (size_t i = 0; i < coordinates.size(); ++i) {
-            if (coordinates[i].eoo() || (Object != coordinates[i].type())) { return false; }
-            BSONObj obj = coordinates[i].Obj();
-            if (!isGeoJSONPoint(obj) && !isLine(obj) && !isGeoJSONPolygon(obj)
-                && !isMultiPoint(obj) && !isMultiPolygon(obj) && !isMultiLine(obj)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    bool GeoParser::isPolygon(const BSONObj &obj) {
-        return isGeoJSONPolygon(obj) || isLegacyPolygon(obj);
-    }
-
     bool GeoParser::crsIsOK(const BSONObj &obj) {
         if (!obj.hasField("crs")) { return true; }
 
@@ -840,28 +551,6 @@ namespace mongo {
         // and http://www.geojson.org/geojson-spec.html#named-crs
         return ("urn:ogc:def:crs:OGC:1.3:CRS84" == name) || ("EPSG:4326" == name) ||
                ("urn:mongodb:strictwindingcrs:EPSG:4326" == name);
-    }
-
-    bool GeoParser::parseGeoJSONCRS(const BSONObj& obj, CRS* crs) {
-
-        dassert(crsIsOK(obj));
-
-        *crs = SPHERE;
-
-        if (!obj["crs"].eoo()) {
-            const string name = obj["crs"].Obj()["properties"].Obj()["name"].String();
-
-            if (name == "urn:mongodb:strictwindingcrs:EPSG:4326")
-                *crs = STRICT_SPHERE;
-            else
-                *crs = SPHERE;
-        }
-
-        return true;
-    }
-
-    bool GeoParser::isCap(const BSONObj &obj) {
-        return isLegacyCenter(obj) || isLegacyCenterSphere(obj);
     }
 
     Status GeoParser::newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out) {
@@ -909,19 +598,6 @@ namespace mongo {
         out->circle.center = p;
         out->crs = SPHERE;
         return Status::OK();
-    }
-
-    bool GeoParser::parseCap(const BSONObj& obj, CapWithCRS *out) {
-        if (isLegacyCenter(obj)) {
-            BSONObjIterator typeIt(obj);
-            BSONElement type = typeIt.next();
-            return newParseLegacyCenter(type.Obj(), out).isOK();
-        } else {
-            verify(isLegacyCenterSphere(obj));
-            BSONObjIterator typeIt(obj);
-            BSONElement type = typeIt.next();
-            return newParseCenterSphere(type.Obj(), out).isOK();
-        }
     }
 
     //  { "type": "GeometryCollection",
