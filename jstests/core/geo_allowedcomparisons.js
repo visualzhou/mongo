@@ -67,11 +67,12 @@ function runTests() {
                                        .itcount();})
     assert.throws(function() { return t.find({geo: {$geoWithin: {$geometry: oldCenterSphere}}})
                                        .itcount();})
+    assert.throws(function() { return t.find({geo: {$geoIntersects: {$geometry: oldPoint}}})
+                                       .itcount();})
     // Even if we only have a 2d index, the 2d suitability function should
     // allow the matcher to deal with this.  If we have a 2dsphere index we use it.
     assert.eq(1, t.find({geo: {$geoWithin: {$geometry: geojsonPoly}}}).itcount())
     assert.eq(1, t.find({geo: {$geoIntersects: {$geometry: geojsonPoly}}}).itcount())
-    assert.eq(1, t.find({geo: {$geoIntersects: {$geometry: oldPoint}}}).itcount())
     assert.eq(1, t.find({geo: {$geoIntersects: {$geometry: geojsonPoint}}}).itcount())
 }
 

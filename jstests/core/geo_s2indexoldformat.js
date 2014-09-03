@@ -11,10 +11,16 @@ t.insert( {geo : {x:40.6, y:5.4}} )
 
 t.ensureIndex( { geo : "2dsphere", nonGeo: 1 } )
 
-res = t.find({ "geo" : { "$geoIntersects" : { "$geometry": {x:40, y:5}}}})
+res = t.find({ "geo" : { "$geoIntersects" : { "$geometry":
+{ type: "Point",
+  coordinates: [40, 5]
+}}}})
 assert.eq(res.count(), 1);
 
-res = t.find({ "geo" : { "$geoIntersects" : {"$geometry": [41,6]}}})
+res = t.find({ "geo" : { "$geoIntersects" : {"$geometry":
+{ type: "Point",
+  coordinates: [41,6]
+}}}})
 assert.eq(res.count(), 2);
 
 // We don't support legacy polygons in 2dsphere.
