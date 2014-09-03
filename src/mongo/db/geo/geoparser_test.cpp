@@ -40,6 +40,9 @@
 #include "mongo/unittest/unittest.h"
 #include "mongo/util/assert_util.h"
 
+// Wrap a BSON object to a BSON element.
+#define BSON_ELT(bson) BSON("" << (bson)).firstElement()
+
 using namespace mongo;
 
 namespace {
@@ -222,23 +225,16 @@ namespace {
         ASSERT_NOT_OK(GeoParser::newParseGeoJSONLine(line2, &line));
     }
 
-    // Test helper for GeoParser::newParseLegacyPoint(const BSONElement &elem, Point *out)
-    Status testPaserLegacyPoint(const BSONObj& pointObj) {
-        mongo::Point point;
-        BSONObj obj = BSON("p" << pointObj);
-        return GeoParser::newParseLegacyPoint(obj.firstElement(), &point);
-    }
-
     TEST(GeoParser, parseLegacyPoint) {
-        ASSERT_OK(testPaserLegacyPoint(BSON_ARRAY(0 << 1)));
-        ASSERT_NOT_OK(testPaserLegacyPoint(BSON_ARRAY(0)));
-        ASSERT_NOT_OK(testPaserLegacyPoint(BSON_ARRAY(0 << 1 << 2)));
-        ASSERT_OK(testPaserLegacyPoint(fromjson("{x: 50, y:40}")));
-        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: '50', y:40}")));
-        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: 5, y:40, z:50}")));
-        ASSERT_NOT_OK(testPaserLegacyPoint(fromjson("{x: 5}")));
+        PointWithCRS point;
+        ASSERT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(BSON_ARRAY(0 << 1)), &point));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(BSON_ARRAY(0)), &point));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(BSON_ARRAY(0 << 1 << 2)), &point));
+        ASSERT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(fromjson("{x: 50, y:40}")), &point));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(fromjson("{x: '50', y:40}")), &point));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(fromjson("{x: 5, y:40, z:50}")), &point));
+        ASSERT_NOT_OK(GeoParser::newParseLegacyPoint(BSON_ELT(fromjson("{x: 5}")), &point));
     }
-
 
     TEST(GeoParser, parseLegacyPolygon) {
         PolygonWithCRS polygon;

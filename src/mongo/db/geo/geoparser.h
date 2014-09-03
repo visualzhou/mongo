@@ -67,7 +67,7 @@ namespace mongo {
         static GeoSpecifier parseGeoSpecifier(const BSONElement& elem);
         static GeoJSONType parseGeoJSONType(const BSONObj& obj);
 
-        static Status newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false);
+        static Status newParseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields = false);
         // Parse the BSON object after $box, $center, etc.
         static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
         static Status newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out);

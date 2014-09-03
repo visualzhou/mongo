@@ -98,7 +98,7 @@ namespace mongo {
         return true;
     }
 
-    Status GeoParser::newParseLegacyPoint(const BSONElement &elem, Point *out, bool allowAddlFields) {
+    static Status newParseFlatPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
         if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
         BSONObjIterator it(elem.Obj());
         BSONElement x = it.next();
@@ -109,6 +109,12 @@ namespace mongo {
         out->x = x.number();
         out->y = y.number();
         return Status::OK();
+    }
+
+    Status GeoParser::newParseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields) {
+        Status status = newParseFlatPoint(elem, &out->oldPoint, allowAddlFields);
+        if (status.isOK()) { out->crs = FLAT; }
+        return status;
     }
 
     static S2Point coordToPoint(double lng, double lat) {
@@ -130,7 +136,7 @@ namespace mongo {
         if (Array != elem.type()) { return BAD_VALUE_STATUS; }
         Point p;
         // Check the object has and only has 2 numbers.
-        Status status = GeoParser::newParseLegacyPoint(elem, &p);
+        Status status = newParseFlatPoint(elem, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
         *out = coordToPoint(p.x, p.y);
@@ -537,9 +543,9 @@ namespace mongo {
         Status status = Status::OK();
 
         BSONObjIterator coordIt(obj);
-        status = newParseLegacyPoint(coordIt.next(), &ptA);
+        status = newParseFlatPoint(coordIt.next(), &ptA);
         if (!status.isOK()) { return status; }
-        status = newParseLegacyPoint(coordIt.next(), &ptB);
+        status = newParseFlatPoint(coordIt.next(), &ptB);
         if (!status.isOK()) { return status; }
         // XXX: VERIFY AREA >= 0
 
@@ -554,7 +560,7 @@ namespace mongo {
         while (coordIt.more()) {
             Point p;
             // A coordinate
-            Status status = newParseLegacyPoint(coordIt.next(), &p);
+            Status status = newParseFlatPoint(coordIt.next(), &p);
             if (!status.isOK()) return status;
             points.push_back(p);
         }
@@ -573,7 +579,7 @@ namespace mongo {
         out->crs = FLAT;
 
         // "coordinates"
-        status = newParseLegacyPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
+        status = newParseFlatPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
         if (!status.isOK()) return status;
 
         // Projection
@@ -863,7 +869,7 @@ namespace mongo {
 
         // Center
         BSONElement center = objIt.next();
-        Status status = newParseLegacyPoint(center, &out->circle.center);
+        Status status = newParseFlatPoint(center, &out->circle.center);
         if (!status.isOK()) return status;
 
         // Redius
@@ -885,7 +891,7 @@ namespace mongo {
         BSONElement center = objIt.next();
         Point p;
         // Check the object has and only has 2 numbers.
-        Status status = newParseLegacyPoint(center, &p);
+        Status status = newParseFlatPoint(center, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
         S2Point centerPoint = coordToPoint(p.x, p.y);
