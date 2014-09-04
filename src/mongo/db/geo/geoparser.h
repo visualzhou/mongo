@@ -69,15 +69,15 @@ namespace mongo {
 
         // Legacy points can contain extra data as extra fields - these are valid to index
         // e.g. { x: 1, y: 1, z: 1 }
-        static Status newParseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields = false);
+        static Status parseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields = false);
         // Parse the BSON object after $box, $center, etc.
-        static Status newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
-        static Status newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out);
-        static Status newParseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out);
-        static Status newParseCenterSphere(const BSONObj& obj, CapWithCRS *out);
-        static Status newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out);
-        static Status newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out);
-        static Status newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out);
+        static Status parseLegacyBox(const BSONObj& obj, BoxWithCRS *out);
+        static Status parseLegacyCenter(const BSONObj& obj, CapWithCRS *out);
+        static Status parseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out);
+        static Status parseCenterSphere(const BSONObj& obj, CapWithCRS *out);
+        static Status parseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out);
+        static Status parseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out);
+        static Status parseGeoJSONLine(const BSONObj& obj, LineWithCRS* out);
         static Status parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out);
         static Status parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out);
         static Status parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out);

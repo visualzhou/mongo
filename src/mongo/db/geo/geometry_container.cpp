@@ -809,13 +809,13 @@ namespace mongo {
 
         if (GeoParser::GEOJSON_POINT == type) {
             _point.reset(new PointWithCRS());
-            status = GeoParser::newParseGeoJSONPoint(obj, _point.get());
+            status = GeoParser::parseGeoJSONPoint(obj, _point.get());
         } else if (GeoParser::GEOJSON_LINESTRING == type) {
             _line.reset(new LineWithCRS());
-            status = GeoParser::newParseGeoJSONLine(obj, _line.get());
+            status = GeoParser::parseGeoJSONLine(obj, _line.get());
         } else if (GeoParser::GEOJSON_POLYGON == type) {
             _polygon.reset(new PolygonWithCRS());
-            status = GeoParser::newParseGeoJSONPolygon(obj, _polygon.get());
+            status = GeoParser::parseGeoJSONPolygon(obj, _polygon.get());
         } else if (GeoParser::GEOJSON_MULTI_POINT == type) {
             _multiPoint.reset(new MultiPointWithCRS());
             status = GeoParser::parseMultiPoint(obj, _multiPoint.get());
@@ -905,16 +905,16 @@ namespace mongo {
         BSONObj obj = elem.Obj();
         if (GeoParser::BOX == specifier) {
             _box.reset(new BoxWithCRS());
-            status = GeoParser::newParseLegacyBox(obj, _box.get());
+            status = GeoParser::parseLegacyBox(obj, _box.get());
         } else if (GeoParser::CENTER == specifier) {
             _cap.reset(new CapWithCRS());
-            status = GeoParser::newParseLegacyCenter(obj, _cap.get());
+            status = GeoParser::parseLegacyCenter(obj, _cap.get());
         } else if (GeoParser::POLYGON == specifier) {
             _polygon.reset(new PolygonWithCRS());
-            status = GeoParser::newParseLegacyPolygon(obj, _polygon.get());
+            status = GeoParser::parseLegacyPolygon(obj, _polygon.get());
         } else if (GeoParser::CENTER_SPHERE == specifier) {
             _cap.reset(new CapWithCRS());
-            status = GeoParser::newParseCenterSphere(obj, _cap.get());
+            status = GeoParser::parseCenterSphere(obj, _cap.get());
         } else if (GeoParser::GEOMETRY == specifier) {
             // GeoJSON geometry
             status = parseFromGeoJSON(obj);
@@ -953,7 +953,7 @@ namespace mongo {
             // { location: {x: 1, y: 2, type: "Point" } }
             _point.reset(new PointWithCRS());
             // Allow more than two dimensions or extra fields, like [1, 2, 3]
-            status = GeoParser::newParseLegacyPoint(elem, _point.get(), true);
+            status = GeoParser::parseLegacyPoint(elem, _point.get(), true);
         } else {
             // GeoJSON
             // { location: { type: "Point", coordinates: [...] } }

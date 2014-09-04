@@ -64,7 +64,7 @@ namespace mongo {
     // XXX Return better errors for all bad values
     static const Status BAD_VALUE_STATUS(ErrorCodes::BadValue, "");
 
-    static Status newParseFlatPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
+    static Status parseFlatPoint(const BSONElement &elem, Point *out, bool allowAddlFields = false) {
         if (!elem.isABSONObj()) return BAD_VALUE_STATUS;
         BSONObjIterator it(elem.Obj());
         BSONElement x = it.next();
@@ -77,8 +77,8 @@ namespace mongo {
         return Status::OK();
     }
 
-    Status GeoParser::newParseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields) {
-        Status status = newParseFlatPoint(elem, &out->oldPoint, allowAddlFields);
+    Status GeoParser::parseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields) {
+        Status status = parseFlatPoint(elem, &out->oldPoint, allowAddlFields);
         if (status.isOK()) { out->crs = FLAT; }
         return status;
     }
@@ -98,11 +98,11 @@ namespace mongo {
         return ll.ToPoint();
     }
 
-    static Status newParseGeoJSONCoodinate(const BSONElement& elem, S2Point* out) {
+    static Status parseGeoJSONCoodinate(const BSONElement& elem, S2Point* out) {
         if (Array != elem.type()) { return BAD_VALUE_STATUS; }
         Point p;
         // Check the object has and only has 2 numbers.
-        Status status = newParseFlatPoint(elem, &p);
+        Status status = parseFlatPoint(elem, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
         *out = coordToPoint(p.x, p.y);
@@ -110,13 +110,13 @@ namespace mongo {
     }
 
     // "coordinates": [ [100.0, 0.0], [101.0, 1.0] ]
-    static Status newParseArrayOfCoodinates(const BSONElement& elem, vector<S2Point>* out) {
+    static Status parseArrayOfCoodinates(const BSONElement& elem, vector<S2Point>* out) {
         if (Array != elem.type()) { return BAD_VALUE_STATUS; }
         BSONObjIterator it(elem.Obj());
         // Iterate all coordinates in array
         while (it.more()) {
             S2Point p;
-            Status status = newParseGeoJSONCoodinate(it.next(), &p);
+            Status status = parseGeoJSONCoodinate(it.next(), &p);
             if (!status.isOK()) return status;
             out->push_back(p);
         }
@@ -133,7 +133,7 @@ namespace mongo {
         }
     }
 
-    static Status newIsLoopClosed(const vector<S2Point>& loop) {
+    static Status isLoopClosed(const vector<S2Point>& loop) {
         if (loop.empty() || loop[0] != loop[loop.size() - 1]) return BAD_VALUE_STATUS;
         return Status::OK();
     }
@@ -150,11 +150,11 @@ namespace mongo {
             // Parse the array of vertices of a loop.
             BSONElement coordinateElt = it.next();
             vector<S2Point> points;
-            status = newParseArrayOfCoodinates(coordinateElt, &points);
+            status = parseArrayOfCoodinates(coordinateElt, &points);
             if (!status.isOK()) return status;
 
             // Check if the loop is closed.
-            status = newIsLoopClosed(points);
+            status = isLoopClosed(points);
             if (!status.isOK()) return status;
 
             eraseDuplicatePoints(&points);
@@ -226,10 +226,10 @@ namespace mongo {
 
         vector<S2Point> exteriorVertices;
         Status status = Status::OK();
-        status = newParseArrayOfCoodinates(coordinates.front(), &exteriorVertices);
+        status = parseArrayOfCoodinates(coordinates.front(), &exteriorVertices);
         if (!status.isOK()) return status;
 
-        status = newIsLoopClosed(exteriorVertices);
+        status = isLoopClosed(exteriorVertices);
         if (!status.isOK()) return status;
 
         eraseDuplicatePoints(&exteriorVertices);
@@ -257,7 +257,7 @@ namespace mongo {
     //     "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
     //    }
     // }
-    static Status newParseGeoJSONCRS(const BSONObj &obj, CRS* crs) {
+    static Status parseGeoJSONCRS(const BSONObj &obj, CRS* crs) {
         BSONElement crsElt = obj["crs"];
         *crs = SPHERE;
         // "crs" field doesn't exist, return the default SPHERE
@@ -291,9 +291,9 @@ namespace mongo {
     // Parse "coordinates" field of GeoJSON LineString
     // e.g. "coordinates": [ [100.0, 0.0], [101.0, 1.0] ]
     // Or a line in "coordinates" field of GeoJSON MultiLineString
-    static Status newParseGeoJSONLineCoordinates(const BSONElement& elem, S2Polyline* out) {
+    static Status parseGeoJSONLineCoordinates(const BSONElement& elem, S2Polyline* out) {
         vector<S2Point> vertices;
-        Status status = newParseArrayOfCoodinates(elem, &vertices);
+        Status status = parseArrayOfCoodinates(elem, &vertices);
         if (!status.isOK()) return status;
 
         eraseDuplicatePoints(&vertices);
@@ -314,11 +314,11 @@ namespace mongo {
         // location: [1, 2] or location: {x: 1, y:2}
         if (Array == elem.type() || obj.firstElement().isNumber()) {
             // Legacy point
-            return GeoParser::newParseLegacyPoint(elem, out, allowAddlFields);
+            return GeoParser::parseLegacyPoint(elem, out, allowAddlFields);
         }
 
         // GeoJSON point. location: { type: "Point", coordinates: [1, 2] }
-        return GeoParser::newParseGeoJSONPoint(obj, out);
+        return GeoParser::parseGeoJSONPoint(obj, out);
     }
 
     /** exported **/
@@ -330,14 +330,14 @@ namespace mongo {
         return parsePoint(elem, out, false);
     }
 
-    Status GeoParser::newParseLegacyBox(const BSONObj& obj, BoxWithCRS *out) {
+    Status GeoParser::parseLegacyBox(const BSONObj& obj, BoxWithCRS *out) {
         Point ptA, ptB;
         Status status = Status::OK();
 
         BSONObjIterator coordIt(obj);
-        status = newParseFlatPoint(coordIt.next(), &ptA);
+        status = parseFlatPoint(coordIt.next(), &ptA);
         if (!status.isOK()) { return status; }
-        status = newParseFlatPoint(coordIt.next(), &ptB);
+        status = parseFlatPoint(coordIt.next(), &ptB);
         if (!status.isOK()) { return status; }
         // XXX: VERIFY AREA >= 0
 
@@ -346,13 +346,13 @@ namespace mongo {
         return status;
     }
 
-    Status GeoParser::newParseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out) {
+    Status GeoParser::parseLegacyPolygon(const BSONObj& obj, PolygonWithCRS *out) {
         BSONObjIterator coordIt(obj);
         vector<Point> points;
         while (coordIt.more()) {
             Point p;
             // A coordinate
-            Status status = newParseFlatPoint(coordIt.next(), &p);
+            Status status = parseFlatPoint(coordIt.next(), &p);
             if (!status.isOK()) return status;
             points.push_back(p);
         }
@@ -363,15 +363,15 @@ namespace mongo {
     }
 
     // { "type": "Point", "coordinates": [100.0, 0.0] }
-    Status GeoParser::newParseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out) {
+    Status GeoParser::parseGeoJSONPoint(const BSONObj &obj,  PointWithCRS *out) {
         Status status = Status::OK();
         // "crs"
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
         out->crs = FLAT;
 
         // "coordinates"
-        status = newParseFlatPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
+        status = parseFlatPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
         if (!status.isOK()) return status;
 
         // Projection
@@ -382,26 +382,26 @@ namespace mongo {
     }
 
     // { "type": "LineString", "coordinates": [ [100.0, 0.0], [101.0, 1.0] ] }
-    Status GeoParser::newParseGeoJSONLine(const BSONObj& obj, LineWithCRS* out)  {
+    Status GeoParser::parseGeoJSONLine(const BSONObj& obj, LineWithCRS* out)  {
         Status status = Status::OK();
         // "crs"
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
 
         // "coordinates"
-        status = newParseGeoJSONLineCoordinates(obj[GEOJSON_COORDINATES], &out->line);
+        status = parseGeoJSONLineCoordinates(obj[GEOJSON_COORDINATES], &out->line);
         if (!status.isOK()) return status;
 
         out->crs = SPHERE;
         return Status::OK();
     }
 
-    Status GeoParser::newParseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
+    Status GeoParser::parseGeoJSONPolygon(const BSONObj &obj, PolygonWithCRS *out) {
         const BSONElement coordinates = obj[GEOJSON_COORDINATES];
 
         Status status = Status::OK();
         // "crs"
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
 
         // "coordinates"
@@ -418,12 +418,12 @@ namespace mongo {
 
     Status GeoParser::parseMultiPoint(const BSONObj &obj, MultiPointWithCRS *out) {
         Status status = Status::OK();
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
 
         out->points.clear();
         BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
-        status = newParseArrayOfCoodinates(coordElt, &out->points);
+        status = parseArrayOfCoodinates(coordElt, &out->points);
         if (!status.isOK()) return status;
 
         if (0 == out->points.size()) return BAD_VALUE_STATUS;
@@ -438,7 +438,7 @@ namespace mongo {
 
     Status GeoParser::parseMultiLine(const BSONObj &obj, MultiLineWithCRS *out) {
         Status status = Status::OK();
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
 
         BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
@@ -452,7 +452,7 @@ namespace mongo {
         // Iterate array
         while (it.more()) {
             lines.push_back(new S2Polyline());
-            status = newParseGeoJSONLineCoordinates(it.next(), lines.back());
+            status = parseGeoJSONLineCoordinates(it.next(), lines.back());
             if (!status.isOK()) return status;
         }
         if (0 == lines.size()) { return BAD_VALUE_STATUS; }
@@ -463,7 +463,7 @@ namespace mongo {
 
     Status GeoParser::parseMultiPolygon(const BSONObj &obj, MultiPolygonWithCRS *out) {
         Status status = Status::OK();
-        status = newParseGeoJSONCRS(obj, &out->crs);
+        status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
 
         BSONElement coordElt = obj.getFieldDotted(GEOJSON_COORDINATES);
@@ -485,12 +485,12 @@ namespace mongo {
         return Status::OK();
     }
 
-    Status GeoParser::newParseLegacyCenter(const BSONObj& obj, CapWithCRS *out) {
+    Status GeoParser::parseLegacyCenter(const BSONObj& obj, CapWithCRS *out) {
         BSONObjIterator objIt(obj);
 
         // Center
         BSONElement center = objIt.next();
-        Status status = newParseFlatPoint(center, &out->circle.center);
+        Status status = parseFlatPoint(center, &out->circle.center);
         if (!status.isOK()) return status;
 
         // Radius
@@ -505,14 +505,14 @@ namespace mongo {
         return Status::OK();
     }
 
-    Status GeoParser::newParseCenterSphere(const BSONObj& obj, CapWithCRS *out) {
+    Status GeoParser::parseCenterSphere(const BSONObj& obj, CapWithCRS *out) {
         BSONObjIterator objIt(obj);
 
         // Center
         BSONElement center = objIt.next();
         Point p;
         // Check the object has and only has 2 numbers.
-        Status status = newParseFlatPoint(center, &p);
+        Status status = parseFlatPoint(center, &p);
         if (!status.isOK()) return status;
         if (!isValidLngLat(p.x, p.y)) { return BAD_VALUE_STATUS; }
         S2Point centerPoint = coordToPoint(p.x, p.y);
@@ -560,13 +560,13 @@ namespace mongo {
             Status status = Status::OK();
             if (GEOJSON_POINT == type) {
                 out->points.resize(out->points.size() + 1);
-                status = newParseGeoJSONPoint(geoObj, &out->points.back());
+                status = parseGeoJSONPoint(geoObj, &out->points.back());
             } else if (GEOJSON_LINESTRING == type) {
                 out->lines.mutableVector().push_back(new LineWithCRS());
-                status = newParseGeoJSONLine(geoObj, out->lines.vector().back());
+                status = parseGeoJSONLine(geoObj, out->lines.vector().back());
             } else if (GEOJSON_POLYGON == type) {
                 out->polygons.mutableVector().push_back(new PolygonWithCRS());
-                status = newParseGeoJSONPolygon(geoObj, out->polygons.vector().back());
+                status = parseGeoJSONPolygon(geoObj, out->polygons.vector().back());
             } else if (GEOJSON_MULTI_POINT == type) {
                 out->multiPoints.mutableVector().push_back(new MultiPointWithCRS());
                 status = parseMultiPoint(geoObj, out->multiPoints.mutableVector().back());
