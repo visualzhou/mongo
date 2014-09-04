@@ -78,9 +78,8 @@ namespace mongo {
     }
 
     Status GeoParser::parseLegacyPoint(const BSONElement &elem, PointWithCRS *out, bool allowAddlFields) {
-        Status status = parseFlatPoint(elem, &out->oldPoint, allowAddlFields);
-        if (status.isOK()) { out->crs = FLAT; }
-        return status;
+        out->crs = FLAT;
+        return parseFlatPoint(elem, &out->oldPoint, allowAddlFields);
     }
 
     static S2Point coordToPoint(double lng, double lat) {
@@ -257,9 +256,10 @@ namespace mongo {
     //     "name": "urn:ogc:def:crs:OGC:1.3:CRS84"
     //    }
     // }
-    static Status parseGeoJSONCRS(const BSONObj &obj, CRS* crs) {
-        BSONElement crsElt = obj["crs"];
+    static Status parseGeoJSONCRS(const BSONObj &obj, CRS* crs, bool allowStrictSphere = false) {
         *crs = SPHERE;
+
+        BSONElement crsElt = obj["crs"];
         // "crs" field doesn't exist, return the default SPHERE
         if (crsElt.eoo()) {
             return Status::OK();
@@ -281,6 +281,10 @@ namespace mongo {
         if (CRS_CRS84 == name || CRS_EPSG_4326 == name) {
             *crs = SPHERE;
         } else if (CRS_STRICT_WINDING == name) {
+            if (!allowStrictSphere) {
+                return Status(ErrorCodes::BadValue,
+                              "strict winding order is only supported by polygon");
+            }
             *crs = STRICT_SPHERE;
         } else {
             return BAD_VALUE_STATUS;
@@ -368,13 +372,13 @@ namespace mongo {
         // "crs"
         status = parseGeoJSONCRS(obj, &out->crs);
         if (!status.isOK()) return status;
-        out->crs = FLAT;
 
         // "coordinates"
         status = parseFlatPoint(obj[GEOJSON_COORDINATES], &out->oldPoint);
         if (!status.isOK()) return status;
 
         // Projection
+        out->crs = FLAT;
         if (!ShapeProjection::supportsProject(*out, SPHERE))
             return BAD_VALUE_STATUS;
         ShapeProjection::projectInto(out, SPHERE);
@@ -392,7 +396,6 @@ namespace mongo {
         status = parseGeoJSONLineCoordinates(obj[GEOJSON_COORDINATES], &out->line);
         if (!status.isOK()) return status;
 
-        out->crs = SPHERE;
         return Status::OK();
     }
 
@@ -400,8 +403,8 @@ namespace mongo {
         const BSONElement coordinates = obj[GEOJSON_COORDINATES];
 
         Status status = Status::OK();
-        // "crs"
-        status = parseGeoJSONCRS(obj, &out->crs);
+        // "crs", allow strict sphere
+        status = parseGeoJSONCRS(obj, &out->crs, true);
         if (!status.isOK()) return status;
 
         // "coordinates"
@@ -431,7 +434,6 @@ namespace mongo {
         for (size_t i = 0; i < out->points.size(); ++i) {
             out->cells[i] = S2Cell(out->points[i]);
         }
-        out->crs = SPHERE;
 
         return Status::OK();
     }
@@ -456,7 +458,6 @@ namespace mongo {
             if (!status.isOK()) return status;
         }
         if (0 == lines.size()) { return BAD_VALUE_STATUS; }
-        out->crs = SPHERE;
 
         return Status::OK();
     }
@@ -480,7 +481,6 @@ namespace mongo {
             if (!status.isOK()) return status;
         }
         if (0 == polygons.size()) { return BAD_VALUE_STATUS; }
-        out->crs = SPHERE;
 
         return Status::OK();
     }
