@@ -44,24 +44,28 @@ namespace mongo {
     class GeoParser {
     public:
 
+        // Geospatial specifier after $geoWithin / $geoIntersects predicates.
+        // i.e. "$box" in { $box: [[1, 2], [3, 4]] }
         enum GeoSpecifier {
-            BOX,
-            CENTER,
-            POLYGON,
-            CENTER_SPHERE,
-            GEOMETRY, // GeoJSON geometry
-            UNKNOWN
+            UNKNOWN = 0,
+            BOX, // $box
+            CENTER,  // $center
+            POLYGON,  // $polygon
+            CENTER_SPHERE,  // $centerSphere
+            GEOMETRY // GeoJSON geometry, $geometry
         };
 
+        // GeoJSON type defined in GeoJSON document.
+        // i.e. "Point" in { type: "Point", coordinates: [1, 2] }
         enum GeoJSONType {
+            GEOJSON_UNKNOWN = 0,
             GEOJSON_POINT,
             GEOJSON_LINESTRING,
             GEOJSON_POLYGON,
             GEOJSON_MULTI_POINT,
             GEOJSON_MULTI_LINESTRING,
             GEOJSON_MULTI_POLYGON,
-            GEOJSON_GEOMETRY_COLLECTION,
-            GEOJSON_UNKNOWN
+            GEOJSON_GEOMETRY_COLLECTION
         };
 
         static GeoSpecifier parseGeoSpecifier(const BSONElement& elem);
