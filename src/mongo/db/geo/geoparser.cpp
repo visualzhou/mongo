@@ -37,6 +37,8 @@
 #include "mongo/util/mongoutils/str.h"
 #include "third_party/s2/s2polygonbuilder.h"
 
+#define BAD_VALUE(error) Status(ErrorCodes::BadValue, ::mongoutils::str::stream() << error)
+
 namespace mongo {
 
     // This field must be present, and...
@@ -138,10 +140,11 @@ namespace mongo {
     }
 
     static Status parseGeoJSONPolygonCoordinates(const BSONElement& elem, S2Polygon *out) {
-        if (Array != elem.type()) { return BAD_VALUE_STATUS; }
+        if (Array != elem.type()) { return BAD_VALUE("Polygon coordinates should be an array"); }
 
         OwnedPointerVector<S2Loop> loops;
         Status status = Status::OK();
+        string err;
 
         BSONObjIterator it(elem.Obj());
         // Iterate all loops of the polygon.
@@ -168,23 +171,28 @@ namespace mongo {
             // 2. All vertices must be unit length. Guaranteed by parsePoints().
             // 3. Loops are not allowed to have any duplicate vertices.
             // 4. Non-adjacent edges are not allowed to intersect.
-            if (!loop->IsValid()) {
-                return BAD_VALUE_STATUS;
+            if (!loop->IsValid(&err)) {
+                return BAD_VALUE("Loop is not valid: " << err << " "
+                                 << coordinateElt.toString(false));
             }
-
             // If the loop is more than one hemisphere, invert it.
             loop->Normalize();
 
             // Check the first loop must be the exterior ring and any others must be
             // interior rings or holes.
-            if (loops.size() > 1 && !loops[0]->Contains(loop)) return BAD_VALUE_STATUS;
+            if (loops.size() > 1 && !loops[0]->Contains(loop)) {
+                return BAD_VALUE("Loop should be a hole: " << coordinateElt.toString(false)
+                                 << " But it's not contained by the first loop: "
+                                 << elem.Obj().firstElement().toString(false));
+            }
         }
 
         // Check if the given loops form a valid polygon.
         // 1. If a loop contains an edge AB, then no other loop may contain AB or BA.
         // 2. No loop covers more than half of the sphere.
         // 3. No two loops cross.
-        if (!S2Polygon::IsValid(loops.vector())) return BAD_VALUE_STATUS;
+        if (!S2Polygon::IsValid(loops.vector(), &err))
+            return BAD_VALUE("Polygon isn't valid: " << err << " " << elem.toString(false));
 
         // Given all loops are valid / normalized and S2Polygon::IsValid() above returns true.
         // The polygon must be valid. See S2Polygon member function IsValid().
@@ -194,21 +202,24 @@ namespace mongo {
 
         // Check if every loop of this polygon shares at most one vertex with
         // its parent loop.
-        if (!out->IsNormalized()) return BAD_VALUE_STATUS;
+        if (!out->IsNormalized(&err))
+            return BAD_VALUE("Can't parse polygon " << elem.toString(false) << " " << err);
 
         // S2Polygon contains more than one ring, which is allowed by S2, but not by GeoJSON.
         //
         // Loops are indexed according to a preorder traversal of the nesting hierarchy.
         // GetLastDescendant() returns the index of the last loop that is contained within
         // a given loop. We guarantee that the first loop is the exterior ring.
-        if (out->GetLastDescendant(0) < out->num_loops() - 1) return BAD_VALUE_STATUS;
+        if (out->GetLastDescendant(0) < out->num_loops() - 1) {
+            return BAD_VALUE("Only one exterior loop is allowed: " << elem.toString(false));
+        }
 
         // In GeoJSON, only one nesting is allowed.
         // The depth of a loop is set by polygon according to the nesting hierarchy of polygon,
         // so the exterior ring's depth is 0, a hole in it is 1, etc.
         for (int i = 0; i < out->num_loops(); i++) {
             if (out->loop(i)->depth() > 1) {
-                return BAD_VALUE_STATUS;
+                return BAD_VALUE("Only one nesting depth is allowed: "<< elem.toString(false));
             }
         }
         return Status::OK();
@@ -216,15 +227,21 @@ namespace mongo {
 
     static Status parseBigSimplePolygonCoordinates(const BSONElement& elem,
                                                    BigSimplePolygon *out) {
-        if (Array != elem.type()) return BAD_VALUE_STATUS;
+        if (Array != elem.type())
+            return Status(ErrorCodes::BadValue, "Coordinates of polygon should be an array");
+
 
         const vector<BSONElement>& coordinates = elem.Array();
         // Only one loop is allowed in a BigSimplePolygon
-        if (coordinates.size() != 1)
-            return BAD_VALUE_STATUS;
+        if (coordinates.size() != 1) {
+            return BAD_VALUE("Only one simple loop is allowed in a big polgyon: "
+                             << elem.toString(false));
+        }
 
         vector<S2Point> exteriorVertices;
         Status status = Status::OK();
+        string err;
+
         status = parseArrayOfCoodinates(coordinates.front(), &exteriorVertices);
         if (!status.isOK()) return status;
 
@@ -237,13 +254,11 @@ namespace mongo {
         // duplicate points
         exteriorVertices.resize(exteriorVertices.size() - 1);
 
-        // S2 Polygon loops must have 3 vertices
-        if (exteriorVertices.size() < 3)
-            return BAD_VALUE_STATUS;
-
         auto_ptr<S2Loop> loop(new S2Loop(exteriorVertices));
-        if (!loop->IsValid())
-            return BAD_VALUE_STATUS;
+        // Check whether this loop is valid.
+        if (!loop->IsValid(&err)) {
+            return BAD_VALUE("Loop is not valid: " << err << " " << elem.toString(false));
+        }
 
         out->Init(loop.release());
         return Status::OK();
@@ -301,10 +316,12 @@ namespace mongo {
         if (!status.isOK()) return status;
 
         eraseDuplicatePoints(&vertices);
-        if (vertices.size() < 2) return BAD_VALUE_STATUS;
+        if (vertices.size() < 2)
+            return BAD_VALUE("GeoJSON LineString should have at least 2 vertices: " << elem.toString(false));
 
-        // XXX change to status
-        if (!S2Polyline::IsValid(vertices)) return BAD_VALUE_STATUS;
+        string err;
+        if (!S2Polyline::IsValid(vertices, &err))
+            return BAD_VALUE("GeoJSON LineString is not valid: " << err << " " << elem.toString(false));
         out->Init(vertices);
         return Status::OK();
     }
