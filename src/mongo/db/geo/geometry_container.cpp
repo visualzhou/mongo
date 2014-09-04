@@ -889,6 +889,7 @@ namespace mongo {
     // { $geoWithin : { $polygon : [[x1, y1], [x1, y2], [x2, y2], [x2, y1]] } }
     // { $geoWithin : { $center : [[x1, y1], r], } }
     // { $geoWithin : { $centerSphere : [[x, y], radius] } }
+    // { $geoIntersects : { $geometry : [1, 2] } }
     //
     // "elem" is the first element of the object after $geoWithin / $geoIntersects predicates.
     // i.e. { $box: ... }, { $geometry: ... }
@@ -916,8 +917,15 @@ namespace mongo {
             _cap.reset(new CapWithCRS());
             status = GeoParser::parseCenterSphere(obj, _cap.get());
         } else if (GeoParser::GEOMETRY == specifier) {
-            // GeoJSON geometry
-            status = parseFromGeoJSON(obj);
+            // GeoJSON geometry or legacy point
+            if (Array == elem.type() || obj.firstElement().isNumber()) {
+                // legacy point
+                _point.reset(new PointWithCRS());
+                status = GeoParser::parseQueryPoint(elem, _point.get());
+            } else {
+                // GeoJSON geometry
+                status = parseFromGeoJSON(obj);
+            }
         }
         if (!status.isOK()) return status;
 
