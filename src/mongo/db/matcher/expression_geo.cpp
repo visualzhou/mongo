@@ -73,23 +73,25 @@ namespace mongo {
 
         BSONObjIterator geoIt(geoObj);
 
-        // "$box", "$center", "$geometry", etc.
-        Status status = geoContainer->parseFromQuery(geoIt.next());
-        if (!status.isOK()) return status;
+        while (geoIt.more()) {
+            BSONElement elt = geoIt.next();
+            if (str::equals(elt.fieldName(), "$uniqueDocs")) {
+                // Deprecated "$uniqueDocs" field
+                warning() << "deprecated $uniqueDocs option: " << obj.toString() << endl;
+            } else {
+                // The element must be a geo specifier. "$box", "$center", "$geometry", etc.
+                geoContainer.reset(new GeometryContainer());
+                Status status = geoContainer->parseFromQuery(elt);
+                if (!status.isOK()) return status;
+            }
+        }
+
+        if (geoContainer == NULL) {
+            return Status(ErrorCodes::BadValue, "geo query doesn't have any geometry");
+        }
 
         if (FLAT == geoContainer->getNativeCRS() && GeoExpression::INTERSECT == predicate) {
             return Status(ErrorCodes::BadValue, "can't query $geoIntersects with legacy shapes");
-        }
-
-        // Deprecated "$uniqueDocs" field
-        if (geoIt.more() && str::equals(geoIt.next().fieldName(), "$uniqueDocs")) {
-            warning() << "deprecated $uniqueDocs option: " << obj.toString() << endl;
-        }
-
-        // No more extra fields
-        if (geoIt.more()) {
-            return Status(ErrorCodes::BadValue,
-                          str::stream() << "can't parse extra field: " << geoIt.next());
         }
 
         // Why do we only deal with $within {polygon}?
@@ -110,7 +112,7 @@ namespace mongo {
     }
 
     bool GeoExpression::parseFrom(const BSONObj &obj) {
-        geoContainer.reset(new GeometryContainer());
+        // Initialize geoContainer and parse BSON object
         if (!parseQuery(obj).isOK()) {
             return false;
         }
