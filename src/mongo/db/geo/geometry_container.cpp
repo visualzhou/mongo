@@ -922,6 +922,14 @@ namespace mongo {
                 // legacy point
                 _point.reset(new PointWithCRS());
                 status = GeoParser::parseQueryPoint(elem, _point.get());
+                // project to SPHERE, since it's after $geometry.
+                // We keep this inconsistent syntax and semantic for back-compatibility.
+                if (!ShapeProjection::supportsProject(*_point, SPHERE)) {
+                    return Status(ErrorCodes::BadValue,
+                                  str::stream() << "longitude/latitude not in bounds: "
+                                                << elem.toString(false));
+                }
+                ShapeProjection::projectInto(_point.get(), SPHERE);
             } else {
                 // GeoJSON geometry
                 status = parseFromGeoJSON(obj);
