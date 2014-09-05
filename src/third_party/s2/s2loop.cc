@@ -34,6 +34,18 @@ using mongoutils::str::stream;
 
 static const unsigned char kCurrentEncodingVersionNumber = 1;
 
+namespace {
+  stream& operator<<(stream& strStream, const S1Angle& angle) {
+    std::stringstream ss;
+    ss << angle;
+    return strStream << ss.str();
+  }
+  // Reverse the output order of Lat/Lng to Lng/Lat
+  stream& operator<<(stream& strStream, const S2LatLng& ll) {
+      return strStream << "[" << ll.lng() << ", " << ll.lat() << "]";
+  }
+}
+
 S2Point const* S2LoopIndex::edge_from(int index) const {
   return &loop_->vertex(index);
 }
@@ -137,19 +149,16 @@ bool S2Loop::IsValid(string* err) const {
         previous_index = ai + 1;
         if (crosses) {
           VLOG(2) << "Edges " << i << " and " << ai << " cross";
-          // additional debugging information:
-          VLOG(2) << "Edge locations in degrees: "
-                  << S2LatLng(vertex(i)) << "-" << S2LatLng(vertex(i+1))
-                  << " and "
-                  << S2LatLng(vertex(ai)) << "-" << S2LatLng(vertex(ai+1));
+          // additional debugging information, reverse Lat/Lng order.
+          string errDetail = stream()
+             << "Edge locations in degrees: "
+             << S2LatLng(vertex(i)) << "-" << S2LatLng(vertex(i + 1))
+             << " and "
+             << S2LatLng(vertex(ai)) << "-" << S2LatLng(vertex(ai + 1));
+          VLOG(2) << errDetail;
           if (NULL != err) {
-            std::stringstream ss;
-            ss << "Edges " << i << " and " << ai << " cross. "
-               << "Edge locations in degrees: "
-               << S2LatLng(vertex(i)) << "-" << S2LatLng(vertex(i + 1))
-               << " and "
-               << S2LatLng(vertex(ai)) << "-" << S2LatLng(vertex(ai + 1));
-            *err = ss.str();
+            *err = stream()
+               << "Edges " << i << " and " << ai << " cross. " << errDetail;
           }
           break;
         }

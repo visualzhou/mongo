@@ -172,8 +172,8 @@ namespace mongo {
             // 3. Loops are not allowed to have any duplicate vertices.
             // 4. Non-adjacent edges are not allowed to intersect.
             if (!loop->IsValid(&err)) {
-                return BAD_VALUE("Loop is not valid: " << err << " "
-                                 << coordinateElt.toString(false));
+                return BAD_VALUE("Loop is not valid: " << coordinateElt.toString(false) << " "
+                                 << err);
             }
             // If the loop is more than one hemisphere, invert it.
             loop->Normalize();
@@ -257,7 +257,7 @@ namespace mongo {
         auto_ptr<S2Loop> loop(new S2Loop(exteriorVertices));
         // Check whether this loop is valid.
         if (!loop->IsValid(&err)) {
-            return BAD_VALUE("Loop is not valid: " << err << " " << elem.toString(false));
+            return BAD_VALUE("Loop is not valid: " << elem.toString(false) << " " << err);
         }
 
         out->Init(loop.release());
