@@ -90,8 +90,13 @@ namespace mongo {
             return Status(ErrorCodes::BadValue, "geo query doesn't have any geometry");
         }
 
-        if (FLAT == geoContainer->getNativeCRS() && GeoExpression::INTERSECT == predicate) {
-            return Status(ErrorCodes::BadValue, "can't query $geoIntersects with legacy shapes");
+        return Status::OK();
+    }
+
+    bool GeoExpression::parseFrom(const BSONObj &obj) {
+        // Initialize geoContainer and parse BSON object
+        if (!parseQuery(obj).isOK()) {
+            return false;
         }
 
         // Why do we only deal with $within {polygon}?
@@ -105,15 +110,6 @@ namespace mongo {
         // allow (a,b),(c,d) to be within (c,d),(a,b).  Anyway, punt on
         // this for now.
         if (GeoExpression::WITHIN == predicate && !geoContainer->supportsContains()) {
-            return Status(ErrorCodes::BadValue,
-                          str::stream() << "$within not supported with provided geometry: " << obj);
-        }
-        return Status::OK();
-    }
-
-    bool GeoExpression::parseFrom(const BSONObj &obj) {
-        // Initialize geoContainer and parse BSON object
-        if (!parseQuery(obj).isOK()) {
             return false;
         }
 
