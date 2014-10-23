@@ -124,7 +124,7 @@ namespace mongo {
 
         static const char* kStageType;
 
-    private:
+    protected:
         /**
          * Initialize the underlying IndexCursor, grab information from the catalog for stats.
          */

@@ -55,6 +55,80 @@
 
 namespace mongo {
 
+    // Helper class to maintain ownership of a match expression alongside an index scan
+    class IndexScanGeo : public IndexScan {
+    public:
+
+        IndexScanGeo(OperationContext* txn,
+                     const IndexScanParams& params,
+                     WorkingSet* workingSet,
+                     MatchExpression* filter)
+            : IndexScan(txn, params, workingSet, filter) {
+        }
+
+        virtual ~IndexScanGeo() {
+        }
+
+        virtual PlanStageStats* getStats();
+
+    private:
+    };
+
+    static BSONObj toGeoJSONSquare(const Interval& interval) {
+        BSONArrayBuilder coordBuilder;
+        S2CellId id = S2CellId::FromString(interval.start.String());
+        S2Cell cell(id);
+        BSONArrayBuilder loopBuilder(coordBuilder.subarrayStart());
+        for (int i = 0; i < 5; ++i) {
+            S2Point point = cell.GetVertex(i % 4);
+            S2LatLng ll(point);
+            double lat = ll.lat().degrees();
+            double lng = ll.lng().degrees();
+            loopBuilder.append(BSON_ARRAY(lng << lat));
+        }
+        loopBuilder.done();
+        return BSON("type" << "Polygon" << "coordinates" << coordBuilder.arr());
+    }
+
+    static BSONObj translateCellIds(const IndexBounds& indexBounds) {
+        const int indexField = 0;
+        OrderedIntervalList oil = indexBounds.fields[indexField];
+        BSONArrayBuilder builder;
+        for (vector<Interval>::const_iterator it = oil.intervals.begin(); it != oil.intervals.end(); ++it) {
+            const Interval& interval = *it;
+            if (interval.start.woCompare(interval.end) == 0) continue;
+            BSONObj geoJSON = toGeoJSONSquare(interval);
+            builder.append(geoJSON);
+        }
+        return builder.obj();
+    }
+
+    PlanStageStats* IndexScanGeo::getStats() {
+        // WARNING: this could be called even if the collection was dropped.  Do not access any
+        // catalog information here.
+        _commonStats.isEOF = isEOF();
+
+        // Add a BSON representation of the filter to the stats tree, if there is one.
+        if (NULL != _filter) {
+            BSONObjBuilder bob;
+            _filter->toBSON(&bob);
+            _commonStats.filter = bob.obj();
+        }
+
+        _specificStats.indexType = "BtreeCursorSpecial"; // TODO amName;
+
+        _specificStats.indexBounds = translateCellIds(_params.bounds);
+        log() << "translateCellIds: " << _specificStats.indexBounds;
+
+        _specificStats.indexBoundsVerbose = _specificStats.indexBounds.toString();
+        _specificStats.direction = _params.direction;
+
+        auto_ptr<PlanStageStats> ret(new PlanStageStats(_commonStats, STAGE_IXSCAN));
+        ret->specific.reset(new IndexScanStats(_specificStats));
+        return ret.release();
+
+    }
+
     PlanStage* buildStages(OperationContext* txn,
                            Collection* collection,
                            const QuerySolution& qsol,
@@ -92,7 +166,13 @@ namespace mongo {
             params.direction = ixn->direction;
             params.maxScan = ixn->maxScan;
             params.addKeyMetadata = ixn->addKeyMetadata;
-            return new IndexScan(txn, params, ws, ixn->filter.get());
+
+            if (IndexNames::findPluginName(ixn->indexKeyPattern) == IndexNames::GEO_2DSPHERE) {
+                return new IndexScanGeo(txn, params, ws, ixn->filter.get());
+            }
+            else {
+                return new IndexScan(txn, params, ws, ixn->filter.get());
+            }
         }
         else if (STAGE_FETCH == root->getType()) {
             const FetchNode* fn = static_cast<const FetchNode*>(root);
