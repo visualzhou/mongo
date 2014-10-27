@@ -117,7 +117,7 @@ namespace mongo {
         coverer.set_min_level(min(coarsestIndexedLevel,
                                   2 + S2::kAvgEdge.GetClosestLevel(edgeLen)));
         coverer.set_max_level(4 + coverer.min_level());
-
+        coverer.set_max_cells(100);
         std::vector<S2CellId> cover;
         coverer.GetCovering(region, &cover);
 

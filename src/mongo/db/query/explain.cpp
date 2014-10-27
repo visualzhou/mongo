@@ -320,7 +320,9 @@ namespace mongo {
             // Bounds can get large. Truncate to 1 MB.
             static const int kMaxBoundsSize = 1024 * 1024;
             bob->append("indexBounds", spec->indexBoundsVerbose.substr(0, kMaxBoundsSize));
-
+            if (spec->indexBounds.couldBeArray()) {
+                bob->append("indexBoundsObj", BSONArray(spec->indexBounds));
+            }
             if (verbosity >= ExplainCommon::EXEC_STATS) {
                 bob->appendNumber("keysExamined", spec->keysExamined);
                 bob->appendNumber("dupsTested", spec->dupsTested);

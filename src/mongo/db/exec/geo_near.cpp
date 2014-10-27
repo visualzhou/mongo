@@ -486,10 +486,10 @@ namespace mongo {
                 _specificStats.indexType = "BtreeCursorSpecial"; // TODO amName;
 
                 _specificStats.indexBounds = translateCellIds(_params.bounds);
-                log() << "translateCellIds: " << _specificStats.indexBounds;
+//                log() << "translateCellIds: " << _specificStats.indexBounds;
 //                printStackTrace();
 
-                _specificStats.indexBoundsVerbose = _specificStats.indexBounds.toString();
+                _specificStats.indexBoundsVerbose = _specificStats.indexBounds.toString(true);
                 _specificStats.direction = _params.direction;
 //            }
 
