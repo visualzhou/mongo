@@ -33,6 +33,7 @@
 #include "mongo/db/concurrency/fast_map_noalloc.h"
 #include "mongo/db/concurrency/locker.h"
 #include "mongo/platform/atomic_word.h"
+#include "mongo/stdx/thread.h"
 #include "mongo/util/concurrency/spin_lock.h"
 
 namespace mongo {
@@ -195,6 +196,8 @@ private:
 
     // Used to disambiguate different lockers
     const LockerId _id;
+
+    const stdx::thread::id _threadId;
 
     // The only reason we have this spin lock here is for the diagnostic tools, which could
     // iterate through the LockRequestsMap on a separate thread and need it to be stable.
