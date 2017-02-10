@@ -1272,7 +1272,7 @@ tasks:
 
 ## compile_all - build all scons targets including unittests ##
 - name: compile_all
-  depends_on: compile
+  depends_on: []
   commands:
     - command: manifest.load
     - *git_get_project
@@ -1294,11 +1294,13 @@ tasks:
 
           rm -rf ${install_directory|/data/mongo-install-directory}
 
-          ${python|python} ./buildscripts/scons.py ${compile_flags|} ${scons_cache_args|} --use-new-tools --build-mongoreplay="${build_mongoreplay}" all ${additional_targets|} MONGO_VERSION=${version}
+          ${python|python} ./buildscripts/scons.py ${compile_flags|} ${scons_cache_args|} --use-new-tools --build-mongoreplay="${build_mongoreplay}" '$BUILD_DIR/mongo/db/repl/sync_tail_test' ${additional_targets|} MONGO_VERSION=${version}
+          find build -name 'sync_tail_test' -exec echo {} \; > build/unittests.txt
 
     # Run the C++ unittests as part of compile_all. The compiled binaries are automatically
     # installed into the top-level directory by SCons.
     - func: "run tests"
+      timeout_secs: 300
       vars:
         resmoke_args: --suites=unittests
         run_multiple_jobs: true
