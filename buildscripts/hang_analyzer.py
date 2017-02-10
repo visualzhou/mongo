@@ -301,7 +301,7 @@ class GDBDumper(object):
             "thread apply all bt",
             "gcore dump_" + process_name + "." + str(pid) + "." + self.get_dump_ext() if take_dump else "",
             "mongodb-analyze",
-            "thread apply all mongodb-deadlock-detect",
+            "mongodb-deadlock-detect",
             "set confirm off",
             "quit",
             ]
