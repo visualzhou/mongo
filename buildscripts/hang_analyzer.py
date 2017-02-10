@@ -288,6 +288,7 @@ class GDBDumper(object):
         print("dir %s" % script_dir);
         gdb_dir = os.path.join(script_dir, "gdb")
         printers_script = os.path.join(gdb_dir, "mongo.py")
+        mongo_lock_script = os.path.join(gdb_dir, "mongo_lock.py")
 
         cmds = [
             "set pagination off",
@@ -296,9 +297,11 @@ class GDBDumper(object):
             "info threads", # Dump a simple list of commands to get the thread name
             "set python print-stack full",
             "source " + printers_script,
+            "source " + mongo_lock_script,
             "thread apply all bt",
             "gcore dump_" + process_name + "." + str(pid) + "." + self.get_dump_ext() if take_dump else "",
             "mongodb-analyze",
+            "thread apply all mongodb-deadlock-detect",
             "set confirm off",
             "quit",
             ]
