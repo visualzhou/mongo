@@ -757,6 +757,7 @@ env.Library(
         'stats/fill_locker_info',
         'stats/top',
         'update/update_driver',
+        'hello-tp',
     ]
 )
 
@@ -2177,4 +2178,11 @@ env.Library(
         '$BUILD_DIR/mongo/rpc/protocol',
         "$BUILD_DIR/mongo/rpc/rpc",
     ],
+)
+
+env.Library(
+    target='hello-tp',
+    source=[
+        "hello-tp.cpp",
+    ]
 )

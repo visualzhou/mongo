@@ -2586,6 +2586,10 @@ def doConfigure(myenv):
 
         conf.Finish()
 
+
+    # env.Message('Adding LTTng userspace tracing... ')
+    env.Append(LIBS=['lttng-ust'])
+
     if has_option('sanitize'):
 
         if not myenv.ToolchainIs('clang', 'gcc'):
