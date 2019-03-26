@@ -879,7 +879,7 @@ void shutdownTask(const ShutdownTaskArgs& shutdownArgs) {
         }
 
         try {
-            replCoord->stepDown(opCtx, false /* force */, Seconds(10), Seconds(120));
+            replCoord->stepDown(opCtx, false /* force */, Seconds(1), Seconds(120));
         } catch (const ExceptionFor<ErrorCodes::NotMaster>&) {
             // ignore not master errors
         } catch (const DBException& e) {
