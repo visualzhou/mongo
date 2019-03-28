@@ -714,6 +714,7 @@ env.Library(
     ],
     LIBDEPS_PRIVATE=[
         '$BUILD_DIR/mongo/db/commands/mongod_fsync',
+        '$BUILD_DIR/mongo/db/hello_tp',
     ],
 )
 

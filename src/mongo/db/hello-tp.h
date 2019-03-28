@@ -9,9 +9,9 @@
 
 #include <lttng/tracepoint.h>
 
-TRACEPOINT_EVENT(
+TRACEPOINT_EVENT_CLASS(
     mongo,
-    txn,
+    txnClass,
     TP_ARGS(
         unsigned int, lsidArg,
         int, txnNumArg,
@@ -23,6 +23,18 @@ TRACEPOINT_EVENT(
         ctf_string(state, stateArg)
     )
 )
+
+#define DEFINE_TXN_INSTANCE(name) TRACEPOINT_EVENT_INSTANCE(mongo, txnClass, txn, \
+    TP_ARGS(unsigned int, lsidArg, int, txnNumArg, const char*, stateArg))
+
+TRACEPOINT_EVENT_CLASS(mongo, simpleEvent, TP_ARGS(), TP_FIELDS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, before_schedule_write_to_oplog, TP_ARGS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, after_schedule_write_to_oplog, TP_ARGS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, after_dispatch_writes, TP_ARGS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, after_oplog_write, TP_ARGS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, after_write_consistency_markers, TP_ARGS())
+TRACEPOINT_EVENT_INSTANCE(mongo, simpleEvent, after_oplog_application, TP_ARGS())
+DEFINE_TXN_INSTANCE(txn)
 
 #endif /* _HELLO_TP_H */
 
