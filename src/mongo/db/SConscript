@@ -757,7 +757,7 @@ env.Library(
         'stats/fill_locker_info',
         'stats/top',
         'update/update_driver',
-        'hello-tp',
+        'hello_tp',
     ]
 )
 
@@ -2181,7 +2181,7 @@ env.Library(
 )
 
 env.Library(
-    target='hello-tp',
+    target='hello_tp',
     source=[
         "hello-tp.cpp",
     ]
