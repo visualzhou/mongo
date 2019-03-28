@@ -97,6 +97,11 @@ private:
     UUID::Hash _hasher;
 };
 
+// Take the first 4 bytes of UUID and convert it to an unsigned integer.
+inline std::uint32_t simpleHash(const LogicalSessionId& lsid) {
+    return *reinterpret_cast<const std::uint32_t*>(lsid.getId().toCDR().data());
+}
+
 
 inline std::ostream& operator<<(std::ostream& s, const LogicalSessionId& lsid) {
     return (s << lsid.getId() << " - " << lsid.getUid());
