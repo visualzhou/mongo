@@ -479,7 +479,7 @@ void TransactionParticipant::Participant::beginOrContinue(OperationContext* opCt
                                                           TxnNumber txnNumber,
                                                           boost::optional<bool> autocommit,
                                                           boost::optional<bool> startTransaction) {
-    tracepoint(mongo, txn, txnNumber, startTransaction ? "begin" : "continue");
+    tracepoint(mongo, txn, simpleHash(_sessionId()), txnNumber, startTransaction ? "begin" : "continue");
     // Make sure we are still a primary. We need to hold on to the RSTL through the end of this
     // method, as we otherwise risk stepping down in the interim and incorrectly updating the
     // transaction number, which can abort active transactions.
@@ -1484,7 +1484,7 @@ void TransactionParticipant::Participant::_cleanUpTxnResourceOnOpCtx(
         terminationCause,
         repl::ReadConcernArgs::get(opCtx));
 
-    tracepoint(mongo, txn, o().activeTxnNumber,
+    tracepoint(mongo, txn, simpleHash(_sessionId()), o().activeTxnNumber,
                terminationCause == TerminationCause::kCommitted ? "committed" : "aborted");
     // Reset the WUOW. We should be able to abort empty transactions that don't have WUOW.
     if (opCtx->getWriteUnitOfWork()) {

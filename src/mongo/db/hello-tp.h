@@ -13,12 +13,14 @@ TRACEPOINT_EVENT(
     mongo,
     txn,
     TP_ARGS(
+        unsigned int, lsidArg,
         int, txnNumArg,
         const char*, stateArg
     ),
     TP_FIELDS(
-        ctf_string(state, stateArg)
+        ctf_integer(unsigned int, lsid, lsidArg)
         ctf_integer(int, txnNum, txnNumArg)
+        ctf_string(state, stateArg)
     )
 )
 
