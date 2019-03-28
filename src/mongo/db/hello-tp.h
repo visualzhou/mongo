@@ -1,5 +1,5 @@
 #undef TRACEPOINT_PROVIDER
-#define TRACEPOINT_PROVIDER hello_world
+#define TRACEPOINT_PROVIDER mongo
 
 #undef TRACEPOINT_INCLUDE
 #define TRACEPOINT_INCLUDE "mongo/db/hello-tp.h"
@@ -10,15 +10,15 @@
 #include <lttng/tracepoint.h>
 
 TRACEPOINT_EVENT(
-    hello_world,
-    my_first_tracepoint,
+    mongo,
+    txn,
     TP_ARGS(
-        int, my_integer_arg,
-        const char*, my_string_arg
+        int, txnNumArg,
+        const char*, stateArg
     ),
     TP_FIELDS(
-        ctf_string(my_string_field, my_string_arg)
-        ctf_integer(int, my_integer_field, my_integer_arg)
+        ctf_string(state, stateArg)
+        ctf_integer(int, txnNum, txnNumArg)
     )
 )
 
