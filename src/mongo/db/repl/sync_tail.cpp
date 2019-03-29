@@ -1291,6 +1291,7 @@ void SyncTail::_fillWriterVectors(OperationContext* opCtx,
             }
             continue;
         } else if (isUnpreparedCommit(op)) {
+            tracepoint(mongo, start_commit_apply);
             // On commit of unprepared transactions, get transactional operations from the oplog and
             // fill writers with those operations.
             try {
@@ -1309,10 +1310,12 @@ void SyncTail::_fillWriterVectors(OperationContext* opCtx,
                     auto newOpCtx = cc().makeOperationContext();
                     ShouldNotConflictWithSecondaryBatchApplicationBlock shouldNotConflictBlock(
                         newOpCtx->lockState());
+                    tracepoint(mongo, start_read_from_oplog_chain);
                     derivedOps->emplace_back(
                         readTransactionOperationsFromOplogChain(newOpCtx.get(), op, pendingList));
                     pendingList.clear();
                 }
+                tracepoint(mongo, txn_apply, simpleHash(*op.getSessionId()), *op.getTxnNumber(), derivedOps->back().size());
                 // Transaction entries cannot have different session updates.
                 _fillWriterVectors(opCtx, &derivedOps->back(), writerVectors, derivedOps, nullptr);
             } catch (...) {

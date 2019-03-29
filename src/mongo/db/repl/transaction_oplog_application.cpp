@@ -36,6 +36,7 @@
 #include "mongo/db/background.h"
 #include "mongo/db/catalog_raii.h"
 #include "mongo/db/commands/txn_cmds_gen.h"
+#include "mongo/db/hello-tp.h"
 #include "mongo/db/repl/apply_ops.h"
 #include "mongo/db/session_catalog_mongod.h"
 #include "mongo/db/transaction_history_iterator.h"
@@ -213,6 +214,7 @@ repl::MultiApplier::Operations readTransactionOperationsFromOplogChain(
               !cachedOps.empty() || iter.hasNext());
     auto commitOrPrepareObj = commitOrPrepare.toBSON();
 
+    tracepoint(mongo, start_traverse_iterater);
     // First retrieve and transform the ops from the oplog, which will be retrieved in reverse
     // order.
     while (iter.hasNext()) {
@@ -223,8 +225,10 @@ repl::MultiApplier::Operations readTransactionOperationsFromOplogChain(
         builder.appendElementsUnique(commitOrPrepareObj);
         ops.emplace_back(builder.obj());
     }
+    tracepoint(mongo, start_reverse_oplog_from_disk, ops.size());
     std::reverse(ops.begin(), ops.end());
 
+    tracepoint(mongo, start_build_cached_ops);
     // Next retrieve and transform the ops from the current batch, which are in increasing timestamp
     // order.
     for (auto* cachedOp : cachedOps) {
@@ -235,6 +239,7 @@ repl::MultiApplier::Operations readTransactionOperationsFromOplogChain(
         builder.appendElementsUnique(commitOrPrepareObj);
         ops.emplace_back(builder.obj());
     }
+    tracepoint(mongo, end_build_cached_ops);
     return ops;
 }
 
