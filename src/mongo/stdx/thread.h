@@ -35,9 +35,9 @@
 #include <cstdint>
 #include <ctime>
 #include <exception>
+#include <iostream>
 #include <thread>
 #include <type_traits>
-#include <iostream>
 
 #include "mongo/stdx/exception.h"
 #include "mongo/util/thread_safety_context.h"

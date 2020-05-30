@@ -46,6 +46,8 @@ Mutex::~Mutex() {
 }
 
 void Mutex::lock() {
+    _aboutToLock();
+
     if (_mutex.try_lock()) {
         _isLocked = true;
         _onQuickLock();
@@ -87,6 +89,17 @@ void Mutex::_onContendedLock() noexcept {
 
     for (auto listener : state.listeners) {
         listener->onContendedLock(_data->identity());
+    }
+}
+
+void Mutex::_aboutToLock() noexcept {
+    auto& state = getDiagnosticListenerState();
+    if (!state.isFinalized.load()) {
+        return;
+    }
+
+    for (auto listener : state.listeners) {
+        listener->aboutToLock(_data->identity());
     }
 }
 

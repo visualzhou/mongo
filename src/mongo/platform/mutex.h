@@ -151,6 +151,7 @@ public:
 
     virtual ~DiagnosticListener() = default;
 
+    virtual void aboutToLock(const Identity& id) {}
     /**
      * Action to do when a lock cannot be immediately acquired
      */
@@ -341,6 +342,7 @@ public:
     ~Mutex();
 
 private:
+    void _aboutToLock() noexcept;
     void _onContendedLock() noexcept;
     void _onQuickLock() noexcept;
     void _onSlowLock() noexcept;
