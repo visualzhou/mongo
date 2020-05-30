@@ -1366,6 +1366,18 @@ env.CppUnitTest(
 )
 
 env.CppUnitTest(
+    target='test_scheduler_test',
+    source=[
+        'test_scheduler_test.cpp',
+    ],
+    LIBDEPS=[
+        '$BUILD_DIR/mongo/base',
+        # '$BUILD_DIR/mongo/util/clock_sources',
+        '$BUILD_DIR/mongo/unittest/unittest',
+    ]
+)
+
+env.CppUnitTest(
     target='topology_version_observer_test',
     source=[
         'topology_version_observer_test.cpp',

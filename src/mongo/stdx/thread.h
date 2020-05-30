@@ -37,6 +37,7 @@
 #include <exception>
 #include <thread>
 #include <type_traits>
+#include <iostream>
 
 #include "mongo/stdx/exception.h"
 #include "mongo/util/thread_safety_context.h"
@@ -181,6 +182,7 @@ public:
                   ::std::set_terminate(  // NOLINT
                       ::mongo::stdx::TerminateHandlerDetailsInterface::dispatch);
 #endif
+                  std::cout << "Thread id " << std::this_thread::get_id() << std::endl;
                   ThreadSafetyContext::getThreadSafetyContext()->onThreadCreate();
                   auto sigAltStackGuard = sigAltStackController.makeInstallGuard();
                   return std::apply(std::move(f), std::move(pack));
