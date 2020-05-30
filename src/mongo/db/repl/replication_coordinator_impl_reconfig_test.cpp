@@ -57,13 +57,11 @@ using executor::RemoteCommandResponse;
 typedef ReplicationCoordinator::ReplSetReconfigArgs ReplSetReconfigArgs;
 
 TEST_F(ReplCoordTest, Simple) {
-    assertStartSuccess(
-        configWithMembers(2, 0, BSON_ARRAY(member(1, "n1:1") << member(2, "n2:1"))),
-        HostAndPort("n1", 1));
+    assertStartSuccess(configWithMembers(2, 0, BSON_ARRAY(member(1, "n1:1") << member(2, "n2:1"))),
+                       HostAndPort("n1", 1));
     ASSERT_OK(getReplCoord()->setFollowerMode(MemberState::RS_SECONDARY));
     ASSERT(true);
 }
-
 
 
 }  // anonymous namespace
