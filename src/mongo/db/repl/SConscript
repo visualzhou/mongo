@@ -1354,11 +1354,7 @@ env.CppUnitTest(
 env.CppUnitTest(
     target='db_repl_coordinator_test',
     source=[
-        'replication_coordinator_impl_elect_v1_test.cpp',
-        'replication_coordinator_impl_heartbeat_v1_test.cpp',
         'replication_coordinator_impl_reconfig_test.cpp',
-        'replication_coordinator_impl_test.cpp',
-        'topology_coordinator_v1_test.cpp',
     ],
     LIBDEPS=[
         'isself',
