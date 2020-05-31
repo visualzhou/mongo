@@ -15,6 +15,12 @@ namespace repl {
 using latch_detail::Identity;
 using unittest::Barrier;
 
+std::string toString(stdx::thread::id id) {
+        std::stringstream stream;
+        stream << id;
+        return stream.str();
+}
+
 struct Choice {
     std::vector<stdx::thread::id> threads;
     size_t currentChoice = 0;
@@ -46,11 +52,11 @@ struct Behavior {
     // Records the thread index in threads scheduled so far.
     // This works as a stack to exhaust every choice in depth-first-seach manner.
     std::vector<Choice> choices;
-    size_t currentChoiceIndex = -1;
+    size_t nextChoiceIndex = 0;
     int totalCount = 1;
 
     bool resetToNext() {
-        currentChoiceIndex = -1;
+        nextChoiceIndex = 0;
         // Pop all exhausted tailing choices.
         while (!choices.empty() && choices.back().exhausted()) {
             choices.pop_back();
@@ -66,19 +72,26 @@ struct Behavior {
     }
 
     void advanceOrAddChoice(std::vector<stdx::thread::id>& threads) {
-        currentChoiceIndex++;
-        if (currentChoiceIndex == choices.size()) {
+        if (nextChoiceIndex == choices.size()) {
             // Traversed exiting path, start to explore new behavior.
-            choices.push_back({threads, 0, currentChoiceIndex});
+            choices.push_back({threads, 0, nextChoiceIndex});
         } else {
+            if (threads != choices[nextChoiceIndex].threads) {
+                logd("threads: ");
+                for (auto t : threads) logd(toString(t));
+                logd("stored: nextChoiceIndex {}", nextChoiceIndex);
+                for (auto t : choices[nextChoiceIndex].threads) logd(toString(t));
+            }
             // We are reproducing a prefix of an existing behavior.
-            invariant(threads == choices[currentChoiceIndex].threads);
+            invariant(threads == choices[nextChoiceIndex].threads);
         }
-        logd("current choice: {}", choices[currentChoiceIndex]);
+        logd("current choice: {}", choices[nextChoiceIndex]);
+        nextChoiceIndex++;
     }
 
     const Choice& currentChoice() {
-        return choices[currentChoiceIndex];
+        invariant(nextChoiceIndex > 0);
+        return choices[nextChoiceIndex - 1];
     }
 
     void print() {
@@ -122,10 +135,10 @@ public:
         stdx::unique_lock<stdx::mutex> lk(mutex);
         bool myTurn = false;
         while (!myTurn) {
-            logd("{} : Waiting for scheduler on {}, action: {}, count: {}, waiting: {}",
+            logd("{} : Waiting for scheduler on {}, next action: {}, count: {}, waiting: {}",
                  me,
                  id.name(),
-                 globalBehavior.currentChoiceIndex,
+                 globalBehavior.nextChoiceIndex,
                  threads.size(),
                  _threadsWaiting);
 
@@ -207,17 +220,14 @@ TEST(Scheduler, Simple) {
                 stdx::lock_guard lk(mutex);
                 logd("XXX 1");
             }
-            {
-                stdx::lock_guard lk(mutex);
-                logd("XXX 3");
-            }
             scheduler.onExitThread();
         });
         scheduler.waitForNewThread(t1.get_id());
 
-        mutex.lock();
-        logd("XXX 2");
-        mutex.unlock();
+        {
+            stdx::lock_guard lk(mutex);
+            logd("XXX 2");
+        }
         scheduler.onExitThread();
 
         t1.join();
@@ -226,6 +236,83 @@ TEST(Scheduler, Simple) {
     } while (scheduler.globalBehavior.resetToNext());
     // Check the post condition of the interleaving.
     ASSERT(true);
+}
+
+TEST(Scheduler, Two_Action_VS_One_Action) {
+    Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
+    do {
+        scheduler.onCreateThread();
+
+        auto t1 = stdx::thread([&] {
+            scheduler.onCreateThread();
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 1");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 3");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(t1.get_id());
+
+        {
+            stdx::lock_guard lk(mutex);
+            logd("XXX 2");
+        }
+        scheduler.onExitThread();
+
+        t1.join();
+
+        scheduler.globalBehavior.print();
+    } while (scheduler.globalBehavior.resetToNext());
+}
+
+// Delegate all work to threads.
+TEST(Scheduler, Two_Action_VS_Two_Action) {
+    Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
+    do {
+        scheduler.onCreateThread();
+
+        auto t1 = stdx::thread([&] {
+            scheduler.onCreateThread();
+            logd("t1");
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 1");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 3");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(t1.get_id());
+
+        auto t2 = stdx::thread([&] {
+            scheduler.onCreateThread();
+            logd("t2");
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 2");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 4");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(t2.get_id());
+
+        // Main thread just starts the threads and doesn't run tests.
+        scheduler.onExitThread();
+
+        t1.join();
+        t2.join();
+
+        scheduler.globalBehavior.print();
+    } while (scheduler.globalBehavior.resetToNext());
 }
 
 }  // namespace
