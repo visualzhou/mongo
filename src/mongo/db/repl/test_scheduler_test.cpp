@@ -19,9 +19,9 @@ using ThreadId = int;
 thread_local ThreadId localThreadId = 0;
 
 std::string toString(ThreadId id) {
-        std::stringstream stream;
-        stream << id;
-        return stream.str();
+    std::stringstream stream;
+    stream << id;
+    return stream.str();
 }
 
 struct Choice {
@@ -81,9 +81,11 @@ struct Behavior {
         } else {
             if (threads != choices[nextChoiceIndex].threads) {
                 logd("threads: ");
-                for (auto t : threads) logd(toString(t));
+                for (auto t : threads)
+                    logd(toString(t));
                 logd("stored: nextChoiceIndex {}", nextChoiceIndex);
-                for (auto t : choices[nextChoiceIndex].threads) logd(toString(t));
+                for (auto t : choices[nextChoiceIndex].threads)
+                    logd(toString(t));
             }
             // We are reproducing a prefix of an existing behavior.
             invariant(threads == choices[nextChoiceIndex].threads);
@@ -127,19 +129,16 @@ public:
     }
 
     void wait(const Identity& id) {
+        stdx::unique_lock<stdx::mutex> lk(mutex);
+
         // For threads before the test runs.
         if (threads.empty())
             return;
 
-        std::stringstream stream;
-        stream << localThreadId;
-        auto me = stream.str();
-
-        stdx::unique_lock<stdx::mutex> lk(mutex);
         bool myTurn = false;
         while (!myTurn) {
             logd("{} : Waiting for scheduler on {}, next action: {}, count: {}, waiting: {}",
-                 me,
+                 localThreadId,
                  id.name(),
                  globalBehavior.nextChoiceIndex,
                  threads.size(),
@@ -283,6 +282,7 @@ TEST(Scheduler, Two_Action_VS_One_Action) {
 }
 
 // Delegate all work to threads.
+// The total behavior number is C(4, 2) = 6.
 TEST(Scheduler, Two_Action_VS_Two_Action) {
     scheduler.reset();
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
@@ -311,6 +311,62 @@ TEST(Scheduler, Two_Action_VS_Two_Action) {
             }
             {
                 stdx::lock_guard lk(mutex);
+                logd("XXX 4");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(2);
+
+        // Main thread just starts the threads and doesn't run tests.
+        scheduler.onExitThread();
+
+        t1.join();
+        t2.join();
+
+        scheduler.globalBehavior.print();
+    } while (scheduler.globalBehavior.resetToNext());
+}
+
+// This test case fails now.
+TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
+    scheduler.reset();
+    Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
+    stdx::condition_variable cv;
+
+    do {
+        bool flag = false;
+        scheduler.onCreateThread(0);
+
+        auto t1 = stdx::thread([&] {
+            scheduler.onCreateThread(1);
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 1");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 3");
+
+                // Set the flag and signal.
+                flag = true;
+                cv.notify_all();
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(1);
+
+        auto t2 = stdx::thread([&] {
+            scheduler.onCreateThread(2);
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 2");
+            }
+            {
+                stdx::unique_lock lk(mutex);
+                // Wait until flag is set. This forces 3 to happen before 4.
+                // Thus this excludes 2 behaviors out of 6 - (1 2 4 3) / (2 1 4 3)
+                logd("Before cv wait");
+                cv.wait(lk, [&] { return flag; });
                 logd("XXX 4");
             }
             scheduler.onExitThread();
