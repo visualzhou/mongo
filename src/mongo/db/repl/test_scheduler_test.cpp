@@ -15,19 +15,22 @@ namespace repl {
 using latch_detail::Identity;
 using unittest::Barrier;
 
-std::string toString(stdx::thread::id id) {
+using ThreadId = int;
+thread_local ThreadId localThreadId = 0;
+
+std::string toString(ThreadId id) {
         std::stringstream stream;
         stream << id;
         return stream.str();
 }
 
 struct Choice {
-    std::vector<stdx::thread::id> threads;
+    std::vector<ThreadId> threads;
     size_t currentChoice = 0;
     size_t actionIndex;
 
     bool isMyTurn() const {
-        return threads[currentChoice] == stdx::this_thread::get_id();
+        return threads[currentChoice] == localThreadId;
     }
 
     void next() {
@@ -71,7 +74,7 @@ struct Behavior {
         return true;
     }
 
-    void advanceOrAddChoice(std::vector<stdx::thread::id>& threads) {
+    void advanceOrAddChoice(std::vector<ThreadId>& threads) {
         if (nextChoiceIndex == choices.size()) {
             // Traversed exiting path, start to explore new behavior.
             choices.push_back({threads, 0, nextChoiceIndex});
@@ -129,7 +132,7 @@ public:
             return;
 
         std::stringstream stream;
-        stream << stdx::this_thread::get_id();
+        stream << localThreadId;
         auto me = stream.str();
 
         stdx::unique_lock<stdx::mutex> lk(mutex);
@@ -152,22 +155,22 @@ public:
         }
     }
 
-    void onCreateThread() {
+    void onCreateThread(ThreadId threadId) {
+        localThreadId = threadId;
         stdx::lock_guard lk(mutex);
-        threads.push_back(stdx::this_thread::get_id());
+        threads.push_back(threadId);
         _threadsWaiting++;
     }
 
     void onExitThread() {
         stdx::lock_guard lk(mutex);
-        threads.erase(std::remove(threads.begin(), threads.end(), stdx::this_thread::get_id()),
-                      threads.end());
+        threads.erase(std::remove(threads.begin(), threads.end(), localThreadId), threads.end());
         attemptToTriggerBarrier();
     }
 
     // TODO: we assume the new thread will not exit without waiting on the mutex so it won't
     // immediately exit.
-    void waitForNewThread(stdx::thread::id newThread) {
+    void waitForNewThread(ThreadId newThread) {
         while (true) {
             std::lock_guard lk(mutex);
             if (std::find(threads.begin(), threads.end(), newThread) != threads.end())
@@ -175,9 +178,15 @@ public:
         }
     }
 
+    void reset() {
+        threads.clear();
+        _threadsWaiting = 0;
+        globalBehavior = Behavior();
+    }
+
     std::mutex mutex;
     Behavior globalBehavior;
-    std::vector<stdx::thread::id> threads;
+    std::vector<ThreadId> threads;
 
     // Barrier
     size_t _threadsWaiting;
@@ -210,19 +219,21 @@ TEST(Scheduler, Simple) {
     // auto& state = latch_detail::getDiagnosticListenerState();
     // logd("XXX state: {}", state.listeners.size());
 
+    scheduler.reset();
+
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
     do {
-        scheduler.onCreateThread();
+        scheduler.onCreateThread(0);
 
         auto t1 = stdx::thread([&] {
-            scheduler.onCreateThread();
+            scheduler.onCreateThread(1);
             {
                 stdx::lock_guard lk(mutex);
                 logd("XXX 1");
             }
             scheduler.onExitThread();
         });
-        scheduler.waitForNewThread(t1.get_id());
+        scheduler.waitForNewThread(1);
 
         {
             stdx::lock_guard lk(mutex);
@@ -239,12 +250,14 @@ TEST(Scheduler, Simple) {
 }
 
 TEST(Scheduler, Two_Action_VS_One_Action) {
+    scheduler.reset();
+
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
     do {
-        scheduler.onCreateThread();
+        scheduler.onCreateThread(0);
 
         auto t1 = stdx::thread([&] {
-            scheduler.onCreateThread();
+            scheduler.onCreateThread(1);
             {
                 stdx::lock_guard lk(mutex);
                 logd("XXX 1");
@@ -255,7 +268,7 @@ TEST(Scheduler, Two_Action_VS_One_Action) {
             }
             scheduler.onExitThread();
         });
-        scheduler.waitForNewThread(t1.get_id());
+        scheduler.waitForNewThread(1);
 
         {
             stdx::lock_guard lk(mutex);
@@ -271,13 +284,13 @@ TEST(Scheduler, Two_Action_VS_One_Action) {
 
 // Delegate all work to threads.
 TEST(Scheduler, Two_Action_VS_Two_Action) {
+    scheduler.reset();
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
     do {
-        scheduler.onCreateThread();
+        scheduler.onCreateThread(0);
 
         auto t1 = stdx::thread([&] {
-            scheduler.onCreateThread();
-            logd("t1");
+            scheduler.onCreateThread(1);
             {
                 stdx::lock_guard lk(mutex);
                 logd("XXX 1");
@@ -288,11 +301,10 @@ TEST(Scheduler, Two_Action_VS_Two_Action) {
             }
             scheduler.onExitThread();
         });
-        scheduler.waitForNewThread(t1.get_id());
+        scheduler.waitForNewThread(1);
 
         auto t2 = stdx::thread([&] {
-            scheduler.onCreateThread();
-            logd("t2");
+            scheduler.onCreateThread(2);
             {
                 stdx::lock_guard lk(mutex);
                 logd("XXX 2");
@@ -303,7 +315,7 @@ TEST(Scheduler, Two_Action_VS_Two_Action) {
             }
             scheduler.onExitThread();
         });
-        scheduler.waitForNewThread(t2.get_id());
+        scheduler.waitForNewThread(2);
 
         // Main thread just starts the threads and doesn't run tests.
         scheduler.onExitThread();
