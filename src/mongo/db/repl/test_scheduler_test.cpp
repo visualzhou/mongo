@@ -17,11 +17,18 @@ using unittest::Barrier;
 
 struct Choice {
     std::vector<stdx::thread::id> threads;
-    size_t currentIndex = 0;
+    size_t currentChoice = 0;
     size_t actionIndex;
 
-    bool isMyTurn() {
-        return threads[currentIndex] == stdx::this_thread::get_id();
+    bool isMyTurn() const {
+        return threads[currentChoice] == stdx::this_thread::get_id();
+    }
+
+    void next() {
+        currentChoice++;
+    }
+    bool exhausted() const {
+        return currentChoice == threads.size() - 1;
     }
 
     std::string toString() const {
@@ -30,8 +37,57 @@ struct Choice {
         for (auto t : threads)
             stream << t << "  ";
         stream << "]";
-        stream << " current: " << currentIndex;
+        stream << " current: " << currentChoice;
         return stream.str();
+    }
+};
+
+struct Behavior {
+    // Records the thread index in threads scheduled so far.
+    // This works as a stack to exhaust every choice in depth-first-seach manner.
+    std::vector<Choice> choices;
+    size_t currentChoiceIndex = -1;
+    int totalCount = 1;
+
+    bool resetToNext() {
+        currentChoiceIndex = 0;
+        // Pop all exhausted tailing choices.
+        while (!choices.empty() && choices.back().exhausted()) {
+            choices.pop_back();
+        }
+
+        if (choices.empty())
+            return false;
+
+        // Advance the leaf.
+        choices.back().next();
+        totalCount++;
+        return true;
+    }
+
+    void advanceOrAddChoice(std::vector<stdx::thread::id>& threads) {
+        currentChoiceIndex++;
+        if (currentChoiceIndex == choices.size()) {
+            // Traversed exiting path, start to explore new behavior.
+            choices.push_back({threads, 0, currentChoiceIndex});
+        } else {
+            // We are reproducing a prefix of an existing behavior.
+            invariant(threads == choices[currentChoiceIndex].threads);
+        }
+        logd("current choice: {}", choices[currentChoiceIndex]);
+    }
+
+    const Choice& currentChoice() {
+        return choices[currentChoiceIndex];
+    }
+
+    void print() {
+        logd("====================================");
+        logd("Current total behavior number: {}", totalCount);
+        for (auto choice : choices) {
+            logd(choice.toString());
+        }
+        logd("====================================");
     }
 };
 
@@ -48,8 +104,7 @@ public:
         _threadsWaiting = threads.size();
         if (!threads.empty()) {
             // Always choose the first one.
-            behavior.push_back({threads, 0, behavior.size()});
-            logd("behavior: {}", behavior.back());
+            globalBehavior.advanceOrAddChoice(threads);
         }
         _condition.notify_all();
         return true;
@@ -70,7 +125,7 @@ public:
             logd("{} : Waiting for scheduler on {}, action: {}, count: {}, waiting: {}",
                  me,
                  id.name(),
-                 behavior.size(),
+                 globalBehavior.currentChoiceIndex,
                  threads.size(),
                  _threadsWaiting);
 
@@ -80,7 +135,7 @@ public:
                     _condition.wait(lk);
                 }
             }
-            myTurn = behavior.back().isMyTurn();
+            myTurn = globalBehavior.currentChoice().isMyTurn();
         }
     }
 
@@ -108,8 +163,7 @@ public:
     }
 
     std::mutex mutex;
-    // Records the thread index in threads scheduled so far.
-    std::vector<Choice> behavior;
+    Behavior globalBehavior;
     std::vector<stdx::thread::id> threads;
 
     // Barrier
@@ -120,7 +174,7 @@ public:
 
 class LockListener : public latch_detail::DiagnosticListener {
     void aboutToLock(const Identity& id) override {
-        logd("about to lock {}", id.name());
+        // logd("about to lock {}", id.name());
         scheduler.wait(id);
     }
 
@@ -167,6 +221,8 @@ TEST(Scheduler, Simple) {
     scheduler.onExitThread();
 
     t1.join();
+
+    scheduler.globalBehavior.print();
 
     // Check the post condition of the interleaving.
     ASSERT(true);
