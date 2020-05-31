@@ -49,7 +49,7 @@ public:
         if (!threads.empty()) {
             // Always choose the first one.
             behavior.push_back({threads, 0, behavior.size()});
-            logd("XXX behavior: {}", behavior.back());
+            logd("behavior: {}", behavior.back());
         }
         _condition.notify_all();
         return true;
@@ -120,7 +120,7 @@ public:
 
 class LockListener : public latch_detail::DiagnosticListener {
     void aboutToLock(const Identity& id) override {
-        logd("XXX about to lock {}", id.name());
+        logd("about to lock {}", id.name());
         scheduler.wait(id);
     }
 
@@ -152,6 +152,10 @@ TEST(Scheduler, Simple) {
         {
             stdx::lock_guard lk(mutex);
             logd("XXX 1");
+        }
+        {
+            stdx::lock_guard lk(mutex);
+            logd("XXX 3");
         }
         scheduler.onExitThread();
     });
