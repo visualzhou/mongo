@@ -50,7 +50,7 @@ struct Behavior {
     int totalCount = 1;
 
     bool resetToNext() {
-        currentChoiceIndex = 0;
+        currentChoiceIndex = -1;
         // Pop all exhausted tailing choices.
         while (!choices.empty() && choices.back().exhausted()) {
             choices.pop_back();
@@ -116,7 +116,7 @@ public:
             return;
 
         std::stringstream stream;
-        stream << "0x" << std::hex << stdx::this_thread::get_id();
+        stream << stdx::this_thread::get_id();
         auto me = stream.str();
 
         stdx::unique_lock<stdx::mutex> lk(mutex);
@@ -198,32 +198,32 @@ TEST(Scheduler, Simple) {
     // logd("XXX state: {}", state.listeners.size());
 
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
-
-    scheduler.onCreateThread();
-
-    auto t1 = stdx::thread([&] {
+    do {
         scheduler.onCreateThread();
-        {
-            stdx::lock_guard lk(mutex);
-            logd("XXX 1");
-        }
-        {
-            stdx::lock_guard lk(mutex);
-            logd("XXX 3");
-        }
+
+        auto t1 = stdx::thread([&] {
+            scheduler.onCreateThread();
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 1");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 3");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(t1.get_id());
+
+        mutex.lock();
+        logd("XXX 2");
+        mutex.unlock();
         scheduler.onExitThread();
-    });
-    scheduler.waitForNewThread(t1.get_id());
 
-    mutex.lock();
-    logd("XXX 2");
-    mutex.unlock();
-    scheduler.onExitThread();
+        t1.join();
 
-    t1.join();
-
-    scheduler.globalBehavior.print();
-
+        scheduler.globalBehavior.print();
+    } while (scheduler.globalBehavior.resetToNext());
     // Check the post condition of the interleaving.
     ASSERT(true);
 }
