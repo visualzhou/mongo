@@ -76,6 +76,10 @@ struct Behavior {
     int totalCount = 1;
 
     bool resetToNext() {
+        // Print the current behavior
+        print();
+
+        // Reset to the next one.
         nextChoiceIndex = 0;
         // Pop all exhausted tailing choices.
         while (!choices.empty() && choices.back().exhausted()) {
@@ -162,6 +166,8 @@ public:
             // Always choose the first one.
             globalBehavior.advanceOrAddChoice(enabledThreads);
         } else if (!threads.empty()) {
+            // This isn't accurate if cv.wait(mutex, pred) is used since the thread may pass the
+            // pred on the first run and didn't block.
             logd("Deadlock detected : threads {}", threads);
         }
         _condition.notify_all();
@@ -205,12 +211,22 @@ public:
 
     // If condition_variable::wait() passes on the first check of "pred", it doesn't wait on the cv.
     // Thus, we need to enable it immediately.
+    //
+    // If we want to check for deadlock, cv.wait(m, pred) will give false alarm if the first check
+    // passes.
     void onConditionVariableFinishWait(ConditionVariableId cv) {
-        logd("#{} : Finish waiting on cv {}", localThreadId, (long long)cv);
-        disabledThreads.erase(std::remove_if(disabledThreads.begin(),
-                                             disabledThreads.end(),
-                                             [&](auto& d) { return d.thread == localThreadId; }),
-                              disabledThreads.end());
+        logd("#{} : Finish waiting on cv {}, next action: {}",
+             localThreadId,
+             (long long)cv,
+             globalBehavior.nextChoiceIndex);
+        auto newEnd = std::remove_if(disabledThreads.begin(), disabledThreads.end(), [&](auto& d) {
+            return d.thread == localThreadId;
+        });
+
+        // If the thread finished waiting without anyone signaling it, it must haven't been blocked.
+        if (newEnd != disabledThreads.end())
+            _threadsWaiting++;
+        disabledThreads.erase(newEnd, disabledThreads.end());
     }
 
     void onConditionVariableSignalAll(ConditionVariableId cv) {
@@ -315,8 +331,6 @@ TEST(Scheduler, Simple) {
         scheduler.onExitThread();
 
         t1.join();
-
-        scheduler.globalBehavior.print();
     } while (scheduler.globalBehavior.resetToNext());
     // Check the post condition of the interleaving.
     ASSERT(true);
@@ -350,8 +364,6 @@ TEST(Scheduler, Two_Action_VS_One_Action) {
         scheduler.onExitThread();
 
         t1.join();
-
-        scheduler.globalBehavior.print();
     } while (scheduler.globalBehavior.resetToNext());
 }
 
@@ -396,8 +408,6 @@ TEST(Scheduler, Two_Action_VS_Two_Action) {
 
         t1.join();
         t2.join();
-
-        scheduler.globalBehavior.print();
     } while (scheduler.globalBehavior.resetToNext());
 }
 
@@ -439,13 +449,13 @@ TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
             {
                 stdx::unique_lock lk(mutex);
                 // Wait until flag is set. This forces 3 to happen before 4.
-                // Thus this excludes 2 behaviors out of 6 - (1 2 4 3) / (2 1 4 3)
+                // Thus this excludes 3 behaviors out of 6 - (1 2 3 4) / (1 3 2 4) / (2 1 3 4)
                 logd("Before cv wait");
                 while (!flag) {
                     scheduler.onConditionVariableWait(latch_detail::Identity(mutex.getName()), &cv);
                     cv.wait(lk);
+                    scheduler.onConditionVariableFinishWait(&cv);
                 }
-                // scheduler.onConditionVariableFinishWait(&cv);
                 logd("XXX 4");
             }
             scheduler.onExitThread();
@@ -457,8 +467,63 @@ TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
 
         t1.join();
         t2.join();
+    } while (scheduler.globalBehavior.resetToNext());
+}
 
-        scheduler.globalBehavior.print();
+// This test case fails now.
+TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable_Pred) {
+    scheduler.reset();
+    Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
+    stdx::condition_variable cv;
+
+    do {
+        bool flag = false;
+        scheduler.onCreateThread(0);
+
+        auto t1 = stdx::thread([&] {
+            scheduler.onCreateThread(1);
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 1");
+            }
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 3");
+
+                // Set the flag and signal.
+                flag = true;
+                scheduler.onConditionVariableSignalAll(&cv);
+                cv.notify_all();
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(1);
+
+        auto t2 = stdx::thread([&] {
+            scheduler.onCreateThread(2);
+            {
+                stdx::lock_guard lk(mutex);
+                logd("XXX 2");
+            }
+            {
+                stdx::unique_lock lk(mutex);
+                // Wait until flag is set. This forces 3 to happen before 4.
+                // Thus this excludes 3 behaviors out of 6 - (1 2 3 4) / (1 3 2 4) / (2 1 3 4)
+                logd("Before cv wait");
+                scheduler.onConditionVariableWait(latch_detail::Identity(mutex.getName()), &cv);
+                cv.wait(lk, [&] { return flag; });
+                scheduler.onConditionVariableFinishWait(&cv);
+                logd("XXX 4");
+            }
+            scheduler.onExitThread();
+        });
+        scheduler.waitForNewThread(2);
+
+        // Main thread just starts the threads and doesn't run tests.
+        scheduler.onExitThread();
+
+        t1.join();
+        t2.join();
     } while (scheduler.globalBehavior.resetToNext());
 }
 
