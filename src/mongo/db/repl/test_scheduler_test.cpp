@@ -16,11 +16,30 @@ using latch_detail::Identity;
 using unittest::Barrier;
 
 using ThreadId = int;
+using ConditionVariableId = stdx::condition_variable*;
+
 thread_local ThreadId localThreadId = 0;
 
 std::string toString(ThreadId id) {
     std::stringstream stream;
     stream << id;
+    return stream.str();
+}
+
+std::string toString(ConditionVariableId id) {
+    std::stringstream stream;
+    stream << (long long)id;
+    return stream.str();
+}
+
+template <class T>
+std::string toString(const std::vector<T>& v) {
+    std::stringstream stream;
+    stream << "[";
+    for (auto& e : v) {
+        stream << e << "  ";
+    }
+    stream << "]";
     return stream.str();
 }
 
@@ -42,11 +61,9 @@ struct Choice {
 
     std::string toString() const {
         std::stringstream stream;
-        stream << "Action " << actionIndex << " : [";
-        for (auto t : threads)
-            stream << t << "  ";
-        stream << "]";
-        stream << " current: " << currentChoice;
+        stream << "Action " << actionIndex << " : " << repl::toString(threads)
+               << " current index: " << currentChoice << " current thread: #"
+               << threads[currentChoice];
         return stream.str();
     }
 };
@@ -80,12 +97,10 @@ struct Behavior {
             choices.push_back({threads, 0, nextChoiceIndex});
         } else {
             if (threads != choices[nextChoiceIndex].threads) {
-                logd("threads: ");
-                for (auto t : threads)
-                    logd(toString(t));
-                logd("stored: nextChoiceIndex {}", nextChoiceIndex);
-                for (auto t : choices[nextChoiceIndex].threads)
-                    logd(toString(t));
+                logd("threads: {}", threads);
+                logd("stored : {}, nextChoiceIndex {}",
+                     choices[nextChoiceIndex].threads,
+                     nextChoiceIndex);
             }
             // We are reproducing a prefix of an existing behavior.
             invariant(threads == choices[nextChoiceIndex].threads);
@@ -109,6 +124,16 @@ struct Behavior {
     }
 };
 
+struct DisabledThread {
+    ThreadId thread;
+    ConditionVariableId cv;
+    std::string toString() const {
+        std::stringstream stream;
+        stream << "<th: " << thread << " cv: " << (long long)cv << ">";
+        return stream.str();
+    }
+};
+
 // TODO:: each mutex has its own scheduler.
 class Scheduler {
 public:
@@ -119,10 +144,25 @@ public:
             return false;
 
         _generation++;
-        _threadsWaiting = threads.size();
-        if (!threads.empty()) {
+        // Only wait for enabled threads on the barrier.
+        _threadsWaiting = threads.size() - disabledThreads.size();
+
+        std::vector<ThreadId> disabledThreadIds, enabledThreads;
+        std::transform(disabledThreads.begin(),
+                       disabledThreads.end(),
+                       std::back_inserter(disabledThreadIds),
+                       [](DisabledThread& d) { return d.thread; });
+        std::set_difference(threads.begin(),
+                            threads.end(),
+                            disabledThreadIds.begin(),
+                            disabledThreadIds.end(),
+                            std::back_inserter(enabledThreads));
+        logd("threads: {}, disabled: {}, enabled: {}", threads, disabledThreadIds, enabledThreads);
+        if (!enabledThreads.empty()) {
             // Always choose the first one.
-            globalBehavior.advanceOrAddChoice(threads);
+            globalBehavior.advanceOrAddChoice(enabledThreads);
+        } else if (!threads.empty()) {
+            logd("Deadlock detected : threads {}", threads);
         }
         _condition.notify_all();
         return true;
@@ -135,9 +175,8 @@ public:
         if (threads.empty())
             return;
 
-        bool myTurn = false;
-        while (!myTurn) {
-            logd("{} : Waiting for scheduler on {}, next action: {}, count: {}, waiting: {}",
+        do {
+            logd("#{} : Waiting for scheduler on {}, next action: {}, count: {}, waiting: {}",
                  localThreadId,
                  id.name(),
                  globalBehavior.nextChoiceIndex,
@@ -150,9 +189,42 @@ public:
                     _condition.wait(lk);
                 }
             }
-            myTurn = globalBehavior.currentChoice().isMyTurn();
-        }
+        } while (!globalBehavior.currentChoice().isMyTurn());
     }
+
+    void onConditionVariableWait(const Identity& id, ConditionVariableId cv) {
+        logd("#{} : Blocking on cv {} with mutex {}, next action: {}",
+             localThreadId,
+             (long long)cv,
+             id.name(),
+             globalBehavior.nextChoiceIndex);
+        disabledThreads.push_back({localThreadId, cv});
+        // This thread is blocked so it hits the barrier.
+        attemptToTriggerBarrier();
+    }
+
+    // If condition_variable::wait() passes on the first check of "pred", it doesn't wait on the cv.
+    // Thus, we need to enable it immediately.
+    void onConditionVariableFinishWait(ConditionVariableId cv) {
+        logd("#{} : Finish waiting on cv {}", localThreadId, (long long)cv);
+        disabledThreads.erase(std::remove_if(disabledThreads.begin(),
+                                             disabledThreads.end(),
+                                             [&](auto& d) { return d.thread == localThreadId; }),
+                              disabledThreads.end());
+    }
+
+    void onConditionVariableSignalAll(ConditionVariableId cv) {
+        std::vector<ThreadId> v;
+        for (auto& d : disabledThreads) {
+            if (d.cv == cv)
+                v.push_back(d.thread);
+        }
+        auto pred = [&](auto& d) { return d.cv == cv; };
+        disabledThreads.erase(std::remove_if(disabledThreads.begin(), disabledThreads.end(), pred),
+                              disabledThreads.end());
+        logd("Signal all blocked threads on cv {}: {}", (long long)cv, v);
+    }
+    // void onConditionVariableSignalOne() {}
 
     void onCreateThread(ThreadId threadId) {
         localThreadId = threadId;
@@ -179,6 +251,7 @@ public:
 
     void reset() {
         threads.clear();
+        disabledThreads.clear();
         _threadsWaiting = 0;
         globalBehavior = Behavior();
     }
@@ -186,6 +259,7 @@ public:
     std::mutex mutex;
     Behavior globalBehavior;
     std::vector<ThreadId> threads;
+    std::vector<DisabledThread> disabledThreads;
 
     // Barrier
     size_t _threadsWaiting;
@@ -349,6 +423,7 @@ TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
 
                 // Set the flag and signal.
                 flag = true;
+                scheduler.onConditionVariableSignalAll(&cv);
                 cv.notify_all();
             }
             scheduler.onExitThread();
@@ -366,7 +441,11 @@ TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
                 // Wait until flag is set. This forces 3 to happen before 4.
                 // Thus this excludes 2 behaviors out of 6 - (1 2 4 3) / (2 1 4 3)
                 logd("Before cv wait");
-                cv.wait(lk, [&] { return flag; });
+                while (!flag) {
+                    scheduler.onConditionVariableWait(latch_detail::Identity(mutex.getName()), &cv);
+                    cv.wait(lk);
+                }
+                // scheduler.onConditionVariableFinishWait(&cv);
                 logd("XXX 4");
             }
             scheduler.onExitThread();
