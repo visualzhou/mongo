@@ -411,7 +411,6 @@ TEST(Scheduler, Two_Action_VS_Two_Action) {
     } while (scheduler.globalBehavior.resetToNext());
 }
 
-// This test case fails now.
 TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
     scheduler.reset();
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
@@ -470,7 +469,6 @@ TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable) {
     } while (scheduler.globalBehavior.resetToNext());
 }
 
-// This test case fails now.
 TEST(Scheduler, Two_Action_VS_Two_Action_ConditionVariable_Pred) {
     scheduler.reset();
     Mutex mutex = MONGO_MAKE_LATCH("test_mutex");
